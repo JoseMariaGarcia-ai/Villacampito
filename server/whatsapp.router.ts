@@ -29,6 +29,7 @@ import {
   sendManualMessage,
   startBaileys,
   resetBaileysSession,
+  sendTestMessage,
 } from "./baileys.service";
 
 const adminProcedure = publicProcedure
@@ -167,6 +168,19 @@ export const whatsappRouter = router({
           input.imageUrl
         );
         return { campaign };
+      }),
+
+    /** Sends a one-off test message to a single number, bypassing the campaign queue/pacing */
+    sendTest: adminProcedure
+      .input(z.object({
+        password: z.string(),
+        phone: z.string().min(1, "El teléfono es obligatorio"),
+        message: z.string().min(1, "El mensaje es obligatorio"),
+        imageUrl: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        await sendTestMessage(input.phone, input.message, input.imageUrl);
+        return { ok: true };
       }),
 
     pause: adminProcedure

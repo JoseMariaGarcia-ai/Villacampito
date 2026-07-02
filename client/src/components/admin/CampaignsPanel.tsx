@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Send, Loader2, Pause, Play, Ban, Search, Megaphone, ImagePlus, X } from "lucide-react";
+import { Send, Loader2, Pause, Play, Ban, Search, Megaphone, ImagePlus, X, FlaskConical } from "lucide-react";
 
 type Props = { password: string };
 
@@ -30,6 +30,7 @@ export default function CampaignsPanel({ password }: Props) {
   const [imageUrl, setImageUrl] = useState("");
   const [imagePreview, setImagePreview] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [testPhone, setTestPhone] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
@@ -47,6 +48,16 @@ export default function CampaignsPanel({ password }: Props) {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const sendTest = trpc.whatsapp.campaigns.sendTest.useMutation({
+    onSuccess: () => toast.success(`Mensaje de prueba enviado a ${testPhone}`),
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleSendTest = () => {
+    if (!message.trim() || !testPhone.trim()) return;
+    sendTest.mutate({ password, phone: testPhone.trim(), message: message.trim(), imageUrl: imageUrl || undefined });
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -215,6 +226,25 @@ export default function CampaignsPanel({ password }: Props) {
           ) : (
             <p className="text-sm text-gray-400 text-center py-6">Sin clientes</p>
           )}
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center border border-gray-100 rounded-lg p-3 bg-gray-50">
+          <p className="text-xs text-gray-500 sm:w-40 shrink-0">Probar antes de lanzar:</p>
+          <input
+            type="text"
+            value={testPhone}
+            onChange={(e) => setTestPhone(e.target.value)}
+            placeholder="Teléfono (ej. 34600000000)"
+            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[oklch(0.28_0.07_245)]"
+          />
+          <Button
+            onClick={handleSendTest}
+            disabled={!message.trim() || !testPhone.trim() || sendTest.isPending || uploading}
+            variant="outline"
+          >
+            {sendTest.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FlaskConical className="w-4 h-4 mr-2" />}
+            Enviar prueba
+          </Button>
         </div>
 
         <Button

@@ -276,6 +276,25 @@ export async function sendManualMessage(jid: string, text: string) {
   await sock.sendMessage(jid, { text });
 }
 
+/**
+ * Sends a one-off test message (optionally with an image) to a single phone
+ * number, bypassing the campaign queue/pacing entirely — used from the
+ * Campaigns panel to verify a message looks right before a bulk send.
+ */
+export async function sendTestMessage(phone: string, text: string, imageUrl?: string) {
+  if (!sock || connectionStatus !== "open") {
+    throw new Error("WhatsApp no está conectado");
+  }
+  const jid = `${phone}@s.whatsapp.net`;
+  if (imageUrl) {
+    const { readStoredFile } = await import("./storage");
+    const imageBuffer = await readStoredFile(imageUrl);
+    await sock.sendMessage(jid, { image: imageBuffer, caption: text });
+  } else {
+    await sock.sendMessage(jid, { text });
+  }
+}
+
 /* ── Bulk campaign processor ──────────────────────────────────────────────
  * Anti-ban strategy for mass sends:
  *   1. Randomized delay between messages, centered on ~2 minutes (90-150s),
