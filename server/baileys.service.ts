@@ -184,7 +184,7 @@ export async function startBaileys() {
       connectionStatus = "disconnected";
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`[Baileys] Disconnected (${statusCode}). Reconnect: ${shouldReconnect}`);
+      console.log(`[Baileys] Disconnected. statusCode=${statusCode} error=${lastDisconnect?.error?.message} reconnect=${shouldReconnect}`);
       if (shouldReconnect) {
         setTimeout(() => startBaileys(), 5000);
       }
