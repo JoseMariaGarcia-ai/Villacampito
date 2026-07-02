@@ -87,3 +87,20 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
   if (S3_BUCKET) return { key, url: s3PublicUrl(key) };
   return { key, url: `/uploads/${key}` };
 }
+
+/**
+ * Reads back a stored file's raw bytes given the URL returned by storagePut.
+ * Local files are read straight off disk (no network round-trip needed);
+ * remote URLs (S3) are fetched over HTTPS. Used to attach images to WhatsApp
+ * messages as embedded media rather than a link WhatsApp would have to fetch.
+ */
+export async function readStoredFile(url: string): Promise<Buffer> {
+  if (url.startsWith("/uploads/")) {
+    const key = url.replace(/^\/uploads\//, "");
+    const filePath = path.join(UPLOADS_DIR, key);
+    return fs.promises.readFile(filePath);
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch stored file (${res.status}): ${url}`);
+  return Buffer.from(await res.arrayBuffer());
+}

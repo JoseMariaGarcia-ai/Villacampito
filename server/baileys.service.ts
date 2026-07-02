@@ -296,7 +296,7 @@ const CAMPAIGN_MAX_GAP_MS = 150_000;
 const CAMPAIGN_BATCH_SIZE = 25;
 const CAMPAIGN_BATCH_PAUSE_MIN_MS = 5 * 60_000;
 const CAMPAIGN_BATCH_PAUSE_MAX_MS = 10 * 60_000;
-const DAILY_CAMPAIGN_LIMIT = 150;
+const DAILY_CAMPAIGN_LIMIT = 300;
 const SENDING_HOUR_START = 9;
 const SENDING_HOUR_END = 22;
 const CAMPAIGN_TIMEZONE = "Europe/Madrid";
@@ -334,11 +334,11 @@ async function processCampaignQueue() {
     const jid = `${recipient.phone}@s.whatsapp.net`;
     try {
       if (recipient.campaignImageUrl) {
-        const { ENV } = await import("./_core/env");
-        const imageUrl = recipient.campaignImageUrl.startsWith("/")
-          ? `${ENV.publicUrl}${recipient.campaignImageUrl}`
-          : recipient.campaignImageUrl;
-        await sock.sendMessage(jid, { image: { url: imageUrl }, caption: recipient.campaignMessage });
+        // Read the actual image bytes and send them embedded in the message
+        // (not a URL) so it arrives as a photo, not a download link.
+        const { readStoredFile } = await import("./storage");
+        const imageBuffer = await readStoredFile(recipient.campaignImageUrl);
+        await sock.sendMessage(jid, { image: imageBuffer, caption: recipient.campaignMessage });
       } else {
         await sock.sendMessage(jid, { text: recipient.campaignMessage });
       }
