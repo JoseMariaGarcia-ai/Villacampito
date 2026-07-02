@@ -22,6 +22,7 @@ import {
   getCurrentQRImage,
   sendManualMessage,
   startBaileys,
+  resetBaileysSession,
 } from "./baileys.service";
 
 const adminProcedure = publicProcedure
@@ -44,6 +45,12 @@ export const whatsappRouter = router({
   })),
 
   reconnect: adminProcedure.mutation(async () => {
+    await startBaileys();
+    return { ok: true };
+  }),
+
+  resetSession: adminProcedure.mutation(async () => {
+    await resetBaileysSession();
     await startBaileys();
     return { ok: true };
   }),

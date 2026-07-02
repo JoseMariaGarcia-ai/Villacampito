@@ -1,4 +1,4 @@
-import { eq, desc, asc } from "drizzle-orm";
+import { eq, desc, asc, like } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   whatsappSessions,
@@ -33,6 +33,13 @@ export async function deleteSession(id: string) {
   const db = await getDb();
   if (!db) return;
   await db.delete(whatsappSessions).where(eq(whatsappSessions.id, id));
+}
+
+/** Wipe all persisted Baileys auth data (creds + keys) to force a fresh QR pairing */
+export async function deleteAllSessions(prefix: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(whatsappSessions).where(like(whatsappSessions.id, `${prefix}%`));
 }
 
 /* ── Conversations ── */

@@ -90,6 +90,11 @@ export default function WhatsAppPanel({ password }: Props) {
     onError: (e) => toast.error(e.message),
   });
 
+  const resetSession = trpc.whatsapp.resetSession.useMutation({
+    onSuccess: () => { toast.success("Sesión reseteada, generando nuevo QR..."); status.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const sendMessage = trpc.whatsapp.sendMessage.useMutation({
     onSuccess: () => {
       setReplyText("");
@@ -208,6 +213,16 @@ export default function WhatsAppPanel({ password }: Props) {
             </div>
           )}
           <p className="text-xs text-yellow-600">Abre WhatsApp → Dispositivos vinculados → Vincular dispositivo</p>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => resetSession.mutate({ password })}
+            disabled={resetSession.isPending}
+            className="text-yellow-700 hover:text-yellow-900"
+          >
+            <RefreshCw className={`w-3 h-3 mr-1 ${resetSession.isPending ? "animate-spin" : ""}`} />
+            ¿No conecta tras escanear? Resetear sesión
+          </Button>
         </div>
       )}
 
@@ -215,15 +230,26 @@ export default function WhatsAppPanel({ password }: Props) {
       {st === "disconnected" && !status.data?.qr && (
         <div className="flex items-center justify-between px-6 py-3 bg-red-50 border-b border-red-100">
           <p className="text-sm text-red-700">WhatsApp desconectado</p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => reconnect.mutate({ password })}
-            disabled={reconnect.isPending}
-          >
-            <RefreshCw className={`w-3 h-3 mr-1 ${reconnect.isPending ? "animate-spin" : ""}`} />
-            Reconectar
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => reconnect.mutate({ password })}
+              disabled={reconnect.isPending}
+            >
+              <RefreshCw className={`w-3 h-3 mr-1 ${reconnect.isPending ? "animate-spin" : ""}`} />
+              Reconectar
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => resetSession.mutate({ password })}
+              disabled={resetSession.isPending}
+            >
+              <RefreshCw className={`w-3 h-3 mr-1 ${resetSession.isPending ? "animate-spin" : ""}`} />
+              Resetear sesión
+            </Button>
+          </div>
         </div>
       )}
 

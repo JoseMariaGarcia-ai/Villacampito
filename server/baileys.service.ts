@@ -15,8 +15,11 @@ import {
   getSession,
   saveSession,
   deleteSession,
+  deleteAllSessions,
 } from "./whatsapp.db";
 import { generateReply } from "./claude.service";
+
+const AUTH_KEY_PREFIX = "baileys-auth-";
 
 // Lazy import to avoid loading Baileys until the service starts
 let sock: WASocket | null = null;
@@ -41,23 +44,42 @@ export function getSocket() {
   return sock;
 }
 
+/** Wipe stored Baileys credentials so the next startBaileys() gets a fresh QR pairing */
+export async function resetBaileysSession() {
+  if (sock) {
+    try {
+      sock.end(undefined);
+    } catch {
+      // ignore errors closing a stale socket
+    }
+    sock = null;
+  }
+  await deleteAllSessions(AUTH_KEY_PREFIX);
+  connectionStatus = "disconnected";
+  qrCode = null;
+  console.log("[Baileys] Session reset — credentials wiped");
+}
+
 /** DB-backed auth state adapter for Baileys */
 async function makeDbAuthState() {
-  const { initAuthCreds } = await import("@whiskeysockets/baileys");
-  const KEY_PREFIX = "baileys-auth-";
+  const { initAuthCreds, BufferJSON } = await import("@whiskeysockets/baileys");
+  const KEY_PREFIX = AUTH_KEY_PREFIX;
 
+  // Baileys keys contain Uint8Array/Buffer values (noiseKey.public, etc).
+  // Plain JSON.stringify/parse loses that structure, so we must use
+  // Baileys' own BufferJSON replacer/reviver to round-trip them correctly.
   const readData = async (id: string) => {
     const row = await getSession(KEY_PREFIX + id);
     if (!row) return null;
     try {
-      return JSON.parse(row.data);
+      return JSON.parse(row.data, BufferJSON.reviver);
     } catch {
       return null;
     }
   };
 
   const writeData = async (id: string, data: unknown) => {
-    await saveSession(KEY_PREFIX + id, JSON.stringify(data));
+    await saveSession(KEY_PREFIX + id, JSON.stringify(data, BufferJSON.replacer));
   };
 
   const removeData = async (id: string) => {
