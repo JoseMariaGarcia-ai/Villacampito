@@ -31,6 +31,7 @@ export default function WhatsAppPanel({ password }: Props) {
   const [replyText, setReplyText] = useState("");
   const [promptText, setPromptText] = useState("");
   const [knowledgeText, setKnowledgeText] = useState("");
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────────
@@ -63,6 +64,18 @@ export default function WhatsAppPanel({ password }: Props) {
       setKnowledgeText(aiConfig.data.knowledge);
     }
   }, [aiConfig.data]);
+
+  // ── Render QR client-side ────────────────────────────────────────────────
+
+  useEffect(() => {
+    const qr = status.data?.qr;
+    if (!qr) { setQrDataUrl(null); return; }
+    import("qrcode").then((mod) => {
+      mod.default.toDataURL(qr, { width: 320, margin: 2, errorCorrectionLevel: "M" })
+        .then(setQrDataUrl)
+        .catch(() => setQrDataUrl(null));
+    }).catch(() => setQrDataUrl(null));
+  }, [status.data?.qr]);
 
   // ── Auto-scroll messages ─────────────────────────────────────────────────
 
@@ -182,9 +195,9 @@ export default function WhatsAppPanel({ password }: Props) {
         <div className="flex flex-col items-center gap-3 py-8 bg-yellow-50 border-b border-yellow-100">
           <QrCode className="w-5 h-5 text-yellow-700" />
           <p className="text-sm text-yellow-800 font-medium">Escanea este código con WhatsApp</p>
-          {status.data.qrImage ? (
+          {qrDataUrl ? (
             <img
-              src={status.data.qrImage}
+              src={qrDataUrl}
               alt="Código QR de WhatsApp"
               className="rounded-lg border border-yellow-200 bg-white p-3"
               style={{ width: 320, height: 320 }}

@@ -21,7 +21,6 @@ import { generateReply } from "./claude.service";
 // Lazy import to avoid loading Baileys until the service starts
 let sock: WASocket | null = null;
 let qrCode: string | null = null;
-let qrCodeDataUrl: string | null = null;
 let connectionStatus: "disconnected" | "connecting" | "open" = "disconnected";
 let isStarting = false;
 
@@ -33,9 +32,9 @@ export function getCurrentQR() {
   return qrCode;
 }
 
-/** QR code rendered as a PNG data URL (data:image/png;base64,...), large and scannable */
+/** @deprecated kept for router compatibility — QR image is now rendered client-side */
 export function getCurrentQRImage() {
-  return qrCodeDataUrl;
+  return null;
 }
 
 export function getSocket() {
@@ -130,7 +129,6 @@ export async function startBaileys() {
 
   connectionStatus = "connecting";
   qrCode = null;
-  qrCodeDataUrl = null;
 
   try {
     console.log("[Baileys] Fetching WA version...");
@@ -173,23 +171,11 @@ export async function startBaileys() {
     if (qr) {
       qrCode = qr;
       connectionStatus = "connecting";
-      try {
-        const QRCode = (await import("qrcode")).default;
-        qrCodeDataUrl = await QRCode.toDataURL(qr, {
-          width: 320,
-          margin: 2,
-          errorCorrectionLevel: "M",
-        });
-      } catch (err) {
-        console.error("[Baileys] Failed to render QR image:", err);
-        qrCodeDataUrl = null;
-      }
       console.log("[Baileys] QR code ready — scan with WhatsApp");
     }
 
     if (connection === "open") {
       qrCode = null;
-      qrCodeDataUrl = null;
       connectionStatus = "open";
       console.log("[Baileys] Connected to WhatsApp");
     }
