@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import {
   ChevronLeft, ChevronRight, Lock, Plus, Trash2, LogOut, Calendar,
   Loader2, BarChart3, Tag, Power, PowerOff, Pencil, X, Check, ImagePlus,
-  MessageCircle,
+  MessageCircle, Users, Search,
 } from "lucide-react";
 import WhatsAppPanel from "@/components/admin/WhatsAppPanel";
 
@@ -182,6 +182,103 @@ function AdminCalendar({
 }
 
 /* ── Offers Manager ── */
+/* ── Clients Manager ── */
+function ClientsManager({ password }: { password: string }) {
+  const [search, setSearch] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+
+  const utils = trpc.useUtils();
+
+  const { data, isLoading } = trpc.clients.getAll.useQuery({ password, search });
+
+  const createMutation = trpc.clients.create.useMutation({
+    onSuccess: () => {
+      utils.clients.getAll.invalidate();
+      setName("");
+      setPhone("");
+    },
+  });
+
+  const deleteMutation = trpc.clients.delete.useMutation({
+    onSuccess: () => utils.clients.getAll.invalidate(),
+  });
+
+  const handleAdd = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !phone.trim()) return;
+    createMutation.mutate({ password, name: name.trim(), phone: phone.trim() });
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      <form onSubmit={handleAdd} className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Nombre"
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[oklch(0.28_0.07_245)]"
+        />
+        <input
+          type="text"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Teléfono"
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[oklch(0.28_0.07_245)]"
+        />
+        <button
+          type="submit"
+          disabled={createMutation.isPending || !name.trim() || !phone.trim()}
+          className="flex items-center justify-center gap-1 bg-[oklch(0.28_0.07_245)] text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+        >
+          {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+          Añadir
+        </button>
+      </form>
+
+      <div className="relative">
+        <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar por nombre o teléfono..."
+          className="w-full border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[oklch(0.28_0.07_245)]"
+        />
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        </div>
+      ) : data && data.clients.length > 0 ? (
+        <div className="flex flex-col divide-y divide-gray-100">
+          {data.clients.map((client) => (
+            <div key={client.id} className="flex items-center justify-between py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">{client.name}</p>
+                <p className="text-xs text-gray-500">{client.phone}</p>
+              </div>
+              <button
+                onClick={() => deleteMutation.mutate({ password, id: client.id })}
+                disabled={deleteMutation.isPending}
+                className="p-2 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400 text-center py-8">
+          {search ? "Sin resultados para tu búsqueda" : "Sin clientes aún"}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function OffersManager({ password }: { password: string }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -518,7 +615,7 @@ export default function Admin() {
   const [password, setPassword] = useState("");
   const [authenticated, setAuthenticated] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState<"calendar" | "offers" | "whatsapp">("calendar");
+  const [activeTab, setActiveTab] = useState<"calendar" | "offers" | "clients" | "whatsapp">("calendar");
 
   const verifyMutation = trpc.calendar.verifyPassword.useMutation({
     onSuccess: () => { setAuthenticated(true); setError(""); },
@@ -631,6 +728,18 @@ export default function Admin() {
             </span>
           </button>
           <button
+            onClick={() => setActiveTab("clients")}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "clients"
+                ? "border-[oklch(0.28_0.07_245)] text-[oklch(0.28_0.07_245)]"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Users className="w-4 h-4" /> Clientes
+            </span>
+          </button>
+          <button
             onClick={() => setActiveTab("whatsapp")}
             className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "whatsapp"
@@ -715,6 +824,20 @@ export default function Admin() {
               </div>
             </div>
             <OffersManager password={password} />
+          </div>
+        )}
+
+        {activeTab === "clients" && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Clientes</h2>
+                <p className="text-sm text-gray-500">
+                  Añade, borra o busca clientes por nombre o teléfono
+                </p>
+              </div>
+            </div>
+            <ClientsManager password={password} />
           </div>
         )}
 

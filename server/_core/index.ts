@@ -76,6 +76,12 @@ async function runMigrations() {
         \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         \`updatedAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )`,
+      `CREATE TABLE IF NOT EXISTS \`clients\` (
+        \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
+        \`name\` VARCHAR(200) NOT NULL,
+        \`phone\` VARCHAR(30) NOT NULL,
+        \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
     ];
     for (const sql of stmts) {
       await conn.execute(sql);

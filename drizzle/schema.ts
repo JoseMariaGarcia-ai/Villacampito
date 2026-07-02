@@ -65,6 +65,19 @@ export const offers = mysqlTable("offers", {
 export type Offer = typeof offers.$inferSelect;
 export type InsertOffer = typeof offers.$inferInsert;
 
+/**
+ * Client contacts book, manually managed from /admin.
+ */
+export const clients = mysqlTable("clients", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 200 }).notNull(),
+  phone: varchar("phone", { length: 30 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = typeof clients.$inferInsert;
+
 /* ── WhatsApp / Baileys ── */
 
 /**

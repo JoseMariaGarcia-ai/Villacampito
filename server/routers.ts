@@ -7,6 +7,7 @@ import { ENV } from "./_core/env";
 import {
   getAllOccupiedDates, addOccupiedDates, removeOccupiedDates,
   getAllOffers, getActiveOffer, createOffer, updateOffer, toggleOfferActive, deleteOffer,
+  getAllClients, createClient, deleteClient,
 } from "./db";
 
 const ADMIN_PASSWORD = ENV.adminPassword;
@@ -130,6 +131,35 @@ export const appRouter = router({
       }))
       .mutation(async ({ input }) => {
         const deleted = await deleteOffer(input.id);
+        return { deleted };
+      }),
+  }),
+
+  clients: router({
+    /** Admin: list clients, optionally filtered by name or phone */
+    getAll: adminProcedure
+      .input(z.object({ password: z.string(), search: z.string().optional() }))
+      .query(async ({ input }) => {
+        const items = await getAllClients(input.search);
+        return { clients: items };
+      }),
+
+    /** Admin: add a new client */
+    create: adminProcedure
+      .input(z.object({
+        name: z.string().min(1, "El nombre es obligatorio"),
+        phone: z.string().min(1, "El teléfono es obligatorio"),
+      }))
+      .mutation(async ({ input }) => {
+        const client = await createClient({ name: input.name, phone: input.phone });
+        return { client };
+      }),
+
+    /** Admin: delete a client */
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const deleted = await deleteClient(input.id);
         return { deleted };
       }),
   }),

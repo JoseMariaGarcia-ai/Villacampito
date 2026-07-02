@@ -124,3 +124,36 @@ export async function deleteOffer(id: number) {
   const result = await db.delete(offers).where(eq(offers.id, id));
   return (result[0] as any).affectedRows > 0;
 }
+
+/* ── Clients helpers ── */
+
+import { clients } from "../drizzle/schema";
+import { like, or } from "drizzle-orm";
+
+export async function getAllClients(search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  if (search && search.trim()) {
+    const term = `%${search.trim()}%`;
+    return db.select().from(clients)
+      .where(or(like(clients.name, term), like(clients.phone, term)))
+      .orderBy(desc(clients.createdAt));
+  }
+  return db.select().from(clients).orderBy(desc(clients.createdAt));
+}
+
+export async function createClient(data: { name: string; phone: string }) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.insert(clients).values({ name: data.name, phone: data.phone });
+  const id = (result[0] as any).insertId;
+  const rows = await db.select().from(clients).where(eq(clients.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function deleteClient(id: number) {
+  const db = await getDb();
+  if (!db) return false;
+  const result = await db.delete(clients).where(eq(clients.id, id));
+  return (result[0] as any).affectedRows > 0;
+}
