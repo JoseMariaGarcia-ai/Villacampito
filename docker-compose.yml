@@ -1,0 +1,59 @@
+# docker-compose.yml — Villa Campito
+#
+# Levanta la app y su base de datos MySQL. La app se conecta a la red
+# externa "proxy", compartida con el Caddy del VPS (ver deploy/infra-caddy/),
+# que es quien expone los dominios al exterior con HTTPS.
+#
+# Primer arranque (ver DEPLOY.md para la guía completa):
+#   docker network create proxy        # si no existe ya (ver deploy/infra-caddy)
+#   docker compose up -d --build
+#   docker compose exec -T app pnpm exec drizzle-kit migrate   # crea las tablas (una sola vez)
+
+services:
+  db:
+    image: mysql:8.4
+    container_name: villacampito-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: villacampito
+      MYSQL_USER: villacampito
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      args:
+        VITE_ANALYTICS_ENDPOINT: ${VITE_ANALYTICS_ENDPOINT:-}
+        VITE_ANALYTICS_WEBSITE_ID: ${VITE_ANALYTICS_WEBSITE_ID:-}
+    container_name: villacampito-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: mysql://villacampito:${DB_PASSWORD}@db:3306/villacampito
+      UPLOADS_DIR: /app/uploads
+    volumes:
+      - uploads-data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  db-data:
+  uploads-data:

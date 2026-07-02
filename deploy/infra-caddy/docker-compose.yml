@@ -1,0 +1,36 @@
+# Caddy compartido del VPS — proxy inverso + HTTPS para TODOS los proyectos.
+#
+# Esto se instala UNA SOLA VEZ por servidor, fuera de cualquier repo de
+# proyecto (recomendado: /opt/infra/caddy/ en el VPS). Cada proyecto (Villa
+# Campito, y los que añadas después) se conecta a la red "proxy" y deja su
+# propio archivo en sites/ con su dominio.
+#
+# Arranque inicial:
+#   docker network create proxy
+#   docker compose up -d
+
+services:
+  caddy:
+    image: caddy:2
+    container_name: infra-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./sites:/etc/caddy/sites
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
+
+volumes:
+  caddy-data:
+  caddy-config:

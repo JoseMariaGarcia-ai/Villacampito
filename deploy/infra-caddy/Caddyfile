@@ -1,0 +1,11 @@
+# Caddyfile compartido del VPS.
+#
+# Cada proyecto añade su propio archivo "sites/<proyecto>.caddy" con el
+# bloque de su(s) dominio(s). Este archivo principal simplemente los importa
+# todos y aplica el email para Let's Encrypt.
+
+{
+	email {$ACME_EMAIL}
+}
+
+import sites/*.caddy

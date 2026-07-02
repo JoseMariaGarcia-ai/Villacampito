@@ -1,0 +1,9 @@
+# Bloque de Caddy para Villa Campito.
+#
+# Copia este archivo dentro de deploy/infra-caddy/sites/ (en el Caddy
+# compartido del VPS) y sustituye los dominios por los reales. Caddy emitirá
+# y renovará el certificado HTTPS automáticamente para cada uno.
+
+villacampito.com, www.villacampito.com {
+	reverse_proxy villacampito-app:3000
+}

@@ -1,0 +1,77 @@
+# Project TODO
+
+- [x] Basic homepage layout with "Sal y Sol" design
+- [x] Header with navigation menu
+- [x] Hero section with carousel of exterior photos
+- [x] Features section with real photos
+- [x] Pricing table (January-March and April)
+- [x] Photo gallery with Exterior/Interior tabs and lightbox
+- [x] Video section with exterior and interior videos
+- [x] Rules section with real content from Airbnb
+- [x] Contact form via WhatsApp
+- [x] Footer with legal info and WhatsApp link
+- [x] WhatsApp floating button on all pages (640723374)
+- [x] All buttons redirect to WhatsApp for reservations
+- [x] Replace AI-generated images with real exterior photos (19)
+- [x] Replace AI-generated images with real interior photos (12)
+- [x] Upload real videos (exterior + interior) to CDN
+- [x] Unify Exterior and Pool categories in gallery
+- [x] Upgrade to full-stack (server + db + user)
+- [x] Backend proxy for Booking.com iCal calendar
+- [x] Live availability calendar synced with Booking.com
+- [x] Add pricing for May-December 2026 (8 períodos completos)
+- [ ] Add real contact email and phone
+- [ ] Google Maps integration with exact location
+- [x] Fix: calendario sincronización Booking.com — verificado que funciona correctamente con comparación UTC
+- [x] Tests vitest para iCal: 7 tests (endpoint, expansión de fechas, cruce de meses, datos reales)
+- [x] Eliminar sincronización con Booking.com (iCal proxy)
+- [x] Calendario manual con días reservados del documento del propietario
+- [x] Actualizar tarifas completas: Ene-Mar, Abril, 1May-11Jun, 12Jun-3Ago, Agosto, 1-15Sep, 15-30Sep, Oct-Nov-Dic
+- [x] Días ocupados manuales: Feb, Mar, Abr, May, Jun, Jul, Ago
+- [x] Nota especial para puentes, Navidad, fin de año, festivos, etc.
+- [x] Fix: Junio días ocupados corregir a 1,2,5,6,7,8,26,27 (quitar 10,11)
+- [x] Fix: Agosto añadir días ocupados 1, 28, 29
+- [x] Fix: Julio añadir día 31 como ocupado
+- [x] Fix: Junio quitar día 8 (libre)
+- [x] Cambiar foto de "Interior y comodidades" por nueva imagen del salón-comedor
+- [x] Centrar texto del hero para que las flechas de desplazamiento no lo tapen
+- [x] Tarifas: convertir en acordeón/desplegable por mes (solo título visible, clic para expandir)
+- [x] Vídeos: reproducción automática en escritorio y móvil (autoplay + muted + loop + IntersectionObserver)
+- [x] Hero: quitar botón "Descubrir más"
+- [x] Cambiar foto de "Zona exterior" por nueva imagen aérea de piscina con chozo
+- [x] Fix: Intercambiar títulos de vídeos (exterior↔interior están al revés)
+- [x] Crear tabla occupiedDates en base de datos
+- [x] Crear procedimientos tRPC para CRUD de días ocupados con autenticación por contraseña
+- [x] Crear página de admin (/admin) con login por contraseña (Villacampito2023)
+- [x] Panel admin: calendario interactivo para añadir/eliminar días ocupados
+- [x] Actualizar PricingSection para leer días ocupados desde la API (no hardcoded)
+- [x] Migrar días ocupados actuales a la base de datos (63 días)
+- [x] Tests para los nuevos procedimientos (7 tests calendar + 11 tests ical + 1 auth = 19 total)
+- [x] Cambiar "Jacuzzi" por "Jacuzzi exterior" en la página principal
+- [x] Cambiar botón "Tarifas" por "Tarifas y Disponibilidad" en la navegación
+- [x] Quitar "Made with Manus" del footer — no estaba en el código del sitio (lo añadía la plataforma de Manus al servirlo); al alojar fuera de Manus desaparece solo
+- [x] Mover botón WhatsApp flotante más arriba en móvil para que no lo tape la marca de Manus
+- [x] Añadir enlace directo al panel de analytics (Umami) en el área privada (/admin)
+- [x] Fix: Enlace a estadísticas se queda en blanco — reemplazado por nota informativa sobre Dashboard de Manus
+- [x] Crear tabla de ofertas en base de datos (título, descripción, descuento, activa, fechas)
+- [x] Crear procedimientos tRPC para CRUD de ofertas (crear, editar, activar/desactivar, eliminar, obtener activa)
+- [x] Crear sección de gestión de ofertas en el panel admin (/admin) con pestañas Calendario/Ofertas
+- [x] Crear popup emergente de oferta en la web pública (aparece a los 15s, se puede cerrar)
+- [x] Tests para el sistema de ofertas (7 tests, 26 total)
+- [x] Añadir campo imageUrl a la tabla de ofertas en base de datos
+- [x] Crear endpoint de subida de imagen para ofertas (S3 via multer)
+- [x] Actualizar panel admin para permitir subir foto al crear/editar oferta
+- [x] Mostrar imagen en el popup de oferta
+- [x] Cambiar tiempo del popup de 15s a 5s
+- [x] Fix: Popup de ofertas no aparece a los 5 segundos (era restricción de sesión)
+- [x] Popup de oferta: quitar restricción de sesión, que aparezca cada vez que se cargue la página
+- [x] Popup oferta: poner imagen a la derecha y texto a la izquierda (layout horizontal) para evitar solapamiento
+- [x] Quitar botón "Oferta especial" flotante que aparece a la derecha de la pantalla (era el badge naranja del popup)
+- [x] Quitar badge naranja "Oferta especial" del popup de oferta
+- [x] Popup oferta: ajustar imagen a 600x600 sin recorte (object-contain, 300x300 en pantalla)
+- [x] Crear página de Aviso Legal con datos de PPLT INVERSIONES 2022, S.L.
+- [x] Crear página de Política de Privacidad genérica
+- [x] Crear página de Política de Cookies genérica
+- [x] Añadir enlaces a las páginas legales en el footer
+- [x] Registrar rutas /aviso-legal, /politica-privacidad, /politica-cookies en App.tsx
+- [x] Preparar el proyecto para funcionar fuera de Manus: quitar OAuth/chat/SDK/runtime de Manus, sustituir almacenamiento por disco local (+S3 opcional), contraseña admin vía ADMIN_PASSWORD, y mover fotos/vídeos de CDN de Manus a client/public/media/ (ver scripts/download-media.mjs)
