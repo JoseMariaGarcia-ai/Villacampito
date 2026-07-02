@@ -130,6 +130,8 @@ export async function startBaileys() {
   connectionStatus = "connecting";
   qrCode = null;
 
+  let saveCreds: (creds: unknown) => Promise<void>;
+
   try {
     console.log("[Baileys] Fetching WA version...");
     let version: [number, number, number];
@@ -143,12 +145,13 @@ export async function startBaileys() {
     }
 
     console.log("[Baileys] Loading auth state...");
-    const { state, saveCreds } = await makeDbAuthState();
+    const authState = await makeDbAuthState();
+    saveCreds = authState.saveCreds;
 
     console.log("[Baileys] Creating socket...");
     sock = makeWASocket({
       version,
-      auth: state,
+      auth: authState.state,
       logger: (await import("pino")).default({ level: "silent" }),
       browser: ["Villa Campito", "Chrome", "1.0.0"],
     });
