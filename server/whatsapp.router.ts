@@ -15,7 +15,13 @@ import {
   setVillaKnowledge,
   getAiGlobalEnabled,
   setAiGlobalEnabled,
+  createCampaign,
+  getAllCampaigns,
+  getCampaignRecipients,
+  setCampaignStatus,
+  cancelCampaign,
 } from "./whatsapp.db";
+import { getAllClients } from "./db";
 import {
   getConnectionStatus,
   getCurrentQR,
@@ -127,4 +133,59 @@ export const whatsappRouter = router({
       await setAiGlobalEnabled(input.enabled);
       return { ok: true };
     }),
+
+  // ── Bulk campaigns ──────────────────────────────────────────────────────────
+
+  campaigns: router({
+    getAll: adminProcedure.query(async () => {
+      return getAllCampaigns();
+    }),
+
+    recipients: adminProcedure
+      .input(z.object({ password: z.string(), campaignId: z.number() }))
+      .query(async ({ input }) => {
+        return getCampaignRecipients(input.campaignId);
+      }),
+
+    /** Creates and immediately starts a campaign for the given clients (all-clients or a filtered subset) */
+    create: adminProcedure
+      .input(z.object({
+        password: z.string(),
+        message: z.string().min(1, "El mensaje es obligatorio"),
+        clientIds: z.array(z.number()).min(1, "Selecciona al menos un cliente"),
+      }))
+      .mutation(async ({ input }) => {
+        const all = await getAllClients();
+        const selected = all.filter((c) => input.clientIds.includes(c.id));
+        if (selected.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No se encontraron los clientes seleccionados" });
+        }
+        const campaign = await createCampaign(
+          input.message,
+          selected.map((c) => ({ name: c.name, phone: c.phone }))
+        );
+        return { campaign };
+      }),
+
+    pause: adminProcedure
+      .input(z.object({ password: z.string(), id: z.number() }))
+      .mutation(async ({ input }) => {
+        await setCampaignStatus(input.id, "paused");
+        return { ok: true };
+      }),
+
+    resume: adminProcedure
+      .input(z.object({ password: z.string(), id: z.number() }))
+      .mutation(async ({ input }) => {
+        await setCampaignStatus(input.id, "running");
+        return { ok: true };
+      }),
+
+    cancel: adminProcedure
+      .input(z.object({ password: z.string(), id: z.number() }))
+      .mutation(async ({ input }) => {
+        await cancelCampaign(input.id);
+        return { ok: true };
+      }),
+  }),
 });

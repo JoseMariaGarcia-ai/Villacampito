@@ -165,3 +165,37 @@ export const villaSettings = mysqlTable("villaSettings", {
   aiGlobalEnabled: boolean("aiGlobalEnabled").default(true).notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+/* ── Bulk WhatsApp campaigns ── */
+
+/**
+ * A bulk-send campaign: one message sent to a list of recipients,
+ * throttled by the campaign processor to avoid WhatsApp bans
+ * (see server/baileys.service.ts sendNextCampaignMessage).
+ */
+export const campaigns = mysqlTable("campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  message: text("message").notNull(),
+  status: mysqlEnum("status", ["running", "paused", "completed", "cancelled"]).default("running").notNull(),
+  totalRecipients: int("totalRecipients").notNull(),
+  sentCount: int("sentCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Campaign = typeof campaigns.$inferSelect;
+
+/**
+ * One row per recipient of a campaign. Order is randomized at creation
+ * time (not client list order) as part of the anti-ban strategy.
+ */
+export const campaignRecipients = mysqlTable("campaignRecipients", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  name: varchar("name", { length: 200 }),
+  phone: varchar("phone", { length: 30 }).notNull(),
+  status: mysqlEnum("status", ["pending", "sent", "failed"]).default("pending").notNull(),
+  sentAt: timestamp("sentAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CampaignRecipient = typeof campaignRecipients.$inferSelect;

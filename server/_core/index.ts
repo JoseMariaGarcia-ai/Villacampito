@@ -8,7 +8,7 @@ import { createContext } from "./context";
 import { ENV } from "./env";
 import { serveStatic, setupVite } from "./vite";
 import { storagePut, UPLOADS_DIR } from "../storage";
-import { startBaileys } from "../baileys.service";
+import { startBaileys, startCampaignProcessor } from "../baileys.service";
 import multer from "multer";
 import mysql, { type Connection } from "mysql2/promise";
 
@@ -80,6 +80,23 @@ async function runMigrations() {
         \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
         \`name\` VARCHAR(200) NOT NULL,
         \`phone\` VARCHAR(30) NOT NULL,
+        \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`campaigns\` (
+        \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
+        \`message\` TEXT NOT NULL,
+        \`status\` ENUM('running','paused','completed','cancelled') NOT NULL DEFAULT 'running',
+        \`totalRecipients\` INT NOT NULL,
+        \`sentCount\` INT NOT NULL DEFAULT 0,
+        \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`campaignRecipients\` (
+        \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
+        \`campaignId\` INT NOT NULL,
+        \`name\` VARCHAR(200),
+        \`phone\` VARCHAR(30) NOT NULL,
+        \`status\` ENUM('pending','sent','failed') NOT NULL DEFAULT 'pending',
+        \`sentAt\` TIMESTAMP NULL,
         \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`,
     ];
@@ -175,6 +192,7 @@ async function startServer() {
     startBaileys().catch((err) =>
       console.error("[Baileys] Failed to start:", err)
     );
+    startCampaignProcessor();
   });
 }
 

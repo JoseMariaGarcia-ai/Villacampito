@@ -20,12 +20,14 @@ import {
   Settings,
   ChevronLeft,
   QrCode,
+  Megaphone,
 } from "lucide-react";
+import CampaignsPanel from "./CampaignsPanel";
 
 type Props = { password: string };
 
 export default function WhatsAppPanel({ password }: Props) {
-  const [activeTab, setActiveTab] = useState<"chats" | "config">("chats");
+  const [activeTab, setActiveTab] = useState<"chats" | "config" | "campaigns">("chats");
   const [selectedConvId, setSelectedConvId] = useState<number | null>(null);
   const [selectedJid, setSelectedJid] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
@@ -183,6 +185,12 @@ export default function WhatsAppPanel({ password }: Props) {
             className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${activeTab === "config" ? "bg-gray-100 font-medium" : "text-gray-500 hover:bg-gray-50"}`}
           >
             <Settings className="w-4 h-4 inline mr-1" />IA
+          </button>
+          <button
+            onClick={() => setActiveTab("campaigns")}
+            className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${activeTab === "campaigns" ? "bg-gray-100 font-medium" : "text-gray-500 hover:bg-gray-50"}`}
+          >
+            <Megaphone className="w-4 h-4 inline mr-1" />Campañas
           </button>
         </div>
       </div>
@@ -487,6 +495,11 @@ export default function WhatsAppPanel({ password }: Props) {
             />
           </div>
         </div>
+      )}
+
+      {/* ── CAMPAIGNS TAB ── */}
+      {activeTab === "campaigns" && (
+        <CampaignsPanel password={password} />
       )}
     </div>
   );

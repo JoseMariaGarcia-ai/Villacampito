@@ -275,3 +275,76 @@ export async function sendManualMessage(jid: string, text: string) {
   }
   await sock.sendMessage(jid, { text });
 }
+
+/* ── Bulk campaign processor ──────────────────────────────────────────────
+ * Anti-ban strategy for mass sends:
+ *   1. Randomized delay between messages, centered on ~2 minutes (90-150s),
+ *      instead of a fixed interval that looks robotic to WhatsApp.
+ *   2. Recipients are shuffled at campaign creation (see whatsapp.db.ts),
+ *      so sends don't follow a predictable list order.
+ *   3. Extra "batch pause" of 5-10 minutes every 25 messages, mimicking a
+ *      human taking a break rather than a script running non-stop.
+ *   4. Daily send cap — refuses to send once DAILY_CAMPAIGN_LIMIT is hit
+ *      in a rolling 24h window, resuming automatically the next day.
+ *   5. Only sends while the WhatsApp socket is actually connected.
+ */
+
+const CAMPAIGN_MIN_GAP_MS = 90_000;
+const CAMPAIGN_MAX_GAP_MS = 150_000;
+const CAMPAIGN_BATCH_SIZE = 25;
+const CAMPAIGN_BATCH_PAUSE_MIN_MS = 5 * 60_000;
+const CAMPAIGN_BATCH_PAUSE_MAX_MS = 10 * 60_000;
+const DAILY_CAMPAIGN_LIMIT = 150;
+
+let campaignNextAllowedAt = 0;
+let campaignSentSinceBatch = 0;
+let campaignProcessorStarted = false;
+
+function randomBetween(min: number, max: number) {
+  return min + Math.random() * (max - min);
+}
+
+async function processCampaignQueue() {
+  try {
+    if (Date.now() < campaignNextAllowedAt) return;
+    if (!sock || connectionStatus !== "open") return;
+
+    const { getNextPendingRecipient, markRecipientSent, markRecipientFailed, getCampaignSentCountLast24h } =
+      await import("./whatsapp.db");
+
+    const sentToday = await getCampaignSentCountLast24h();
+    if (sentToday >= DAILY_CAMPAIGN_LIMIT) return;
+
+    const recipient = await getNextPendingRecipient();
+    if (!recipient) return;
+
+    const jid = `${recipient.phone}@s.whatsapp.net`;
+    try {
+      await sock.sendMessage(jid, { text: recipient.campaignMessage });
+      await markRecipientSent(recipient.id, recipient.campaignId);
+      console.log(`[Campaign] Sent to ${recipient.phone} (campaign ${recipient.campaignId})`);
+    } catch (err) {
+      console.error(`[Campaign] Failed to send to ${recipient.phone}:`, err);
+      await markRecipientFailed(recipient.id);
+    }
+
+    campaignSentSinceBatch++;
+    if (campaignSentSinceBatch >= CAMPAIGN_BATCH_SIZE) {
+      campaignSentSinceBatch = 0;
+      campaignNextAllowedAt = Date.now() + randomBetween(CAMPAIGN_BATCH_PAUSE_MIN_MS, CAMPAIGN_BATCH_PAUSE_MAX_MS);
+      console.log("[Campaign] Batch pause triggered to mimic human sending pattern");
+    } else {
+      campaignNextAllowedAt = Date.now() + randomBetween(CAMPAIGN_MIN_GAP_MS, CAMPAIGN_MAX_GAP_MS);
+    }
+  } catch (err) {
+    console.error("[Campaign] Processor error:", err);
+  }
+}
+
+/** Starts the interval that paces campaign sends. Safe to call once at server startup. */
+export function startCampaignProcessor() {
+  if (campaignProcessorStarted) return;
+  campaignProcessorStarted = true;
+  setInterval(processCampaignQueue, 15_000);
+  console.log("[Campaign] Processor started");
+}

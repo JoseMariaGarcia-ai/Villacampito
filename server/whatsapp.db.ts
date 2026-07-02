@@ -1,4 +1,4 @@
-import { eq, desc, asc, like } from "drizzle-orm";
+import { eq, desc, asc, like, and, gte, sql as rawSql } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   whatsappSessions,
@@ -7,8 +7,12 @@ import {
   villaPrompt,
   villaKnowledge,
   villaSettings,
+  campaigns,
+  campaignRecipients,
   type WhatsappConversation,
   type WhatsappMessage,
+  type Campaign,
+  type CampaignRecipient,
 } from "../drizzle/schema";
 
 /* ── Baileys session persistence ── */
@@ -238,4 +242,114 @@ export async function setAiGlobalEnabled(enabled: boolean) {
     .insert(villaSettings)
     .values({ id: 1, aiGlobalEnabled: enabled })
     .onDuplicateKeyUpdate({ set: { aiGlobalEnabled: enabled } });
+}
+
+/* ── Bulk campaigns ── */
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** Creates a campaign and its recipients in randomized order (anti-ban: no predictable send pattern). */
+export async function createCampaign(message: string, recipients: { name: string; phone: string }[]) {
+  const db = await getDb();
+  if (!db) return null;
+  const shuffled = shuffle(recipients);
+  const result = await db.insert(campaigns).values({
+    message,
+    totalRecipients: shuffled.length,
+  });
+  const campaignId = (result[0] as any).insertId;
+  if (shuffled.length > 0) {
+    await db.insert(campaignRecipients).values(
+      shuffled.map((r) => ({ campaignId, name: r.name, phone: r.phone }))
+    );
+  }
+  const rows = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getAllCampaigns(): Promise<Campaign[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(campaigns).orderBy(desc(campaigns.createdAt));
+}
+
+export async function getCampaignRecipients(campaignId: number): Promise<CampaignRecipient[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(campaignRecipients).where(eq(campaignRecipients.campaignId, campaignId)).orderBy(asc(campaignRecipients.id));
+}
+
+export async function setCampaignStatus(id: number, status: Campaign["status"]) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(campaigns).set({ status }).where(eq(campaigns.id, id));
+}
+
+/** Cancel a campaign: stop future sends, keep history of what was already sent. */
+export async function cancelCampaign(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(campaigns).set({ status: "cancelled" }).where(eq(campaigns.id, id));
+}
+
+/**
+ * Picks the single next recipient due to receive a campaign message, oldest
+ * running campaign first (FIFO), oldest pending recipient within it.
+ * Only one recipient is ever returned so the caller can pace sends globally.
+ */
+export async function getNextPendingRecipient(): Promise<(CampaignRecipient & { campaignMessage: string }) | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const runningCampaigns = await db
+    .select()
+    .from(campaigns)
+    .where(eq(campaigns.status, "running"))
+    .orderBy(asc(campaigns.createdAt));
+
+  for (const campaign of runningCampaigns) {
+    const pending = await db
+      .select()
+      .from(campaignRecipients)
+      .where(and(eq(campaignRecipients.campaignId, campaign.id), eq(campaignRecipients.status, "pending")))
+      .orderBy(asc(campaignRecipients.id))
+      .limit(1);
+    if (pending[0]) {
+      return { ...pending[0], campaignMessage: campaign.message };
+    }
+    // No pending recipients left in this running campaign — mark it completed.
+    await db.update(campaigns).set({ status: "completed" }).where(eq(campaigns.id, campaign.id));
+  }
+  return null;
+}
+
+export async function markRecipientSent(recipientId: number, campaignId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(campaignRecipients).set({ status: "sent", sentAt: new Date() }).where(eq(campaignRecipients.id, recipientId));
+  await db.update(campaigns).set({ sentCount: rawSql`${campaigns.sentCount} + 1` }).where(eq(campaigns.id, campaignId));
+}
+
+export async function markRecipientFailed(recipientId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(campaignRecipients).set({ status: "failed" }).where(eq(campaignRecipients.id, recipientId));
+}
+
+/** Anti-ban daily cap: counts how many campaign messages were sent in the last 24h. */
+export async function getCampaignSentCountLast24h(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({ count: rawSql<number>`count(*)` })
+    .from(campaignRecipients)
+    .where(and(eq(campaignRecipients.status, "sent"), gte(campaignRecipients.sentAt, since)));
+  return Number(rows[0]?.count ?? 0);
 }
