@@ -133,15 +133,28 @@ export async function startBaileys() {
   qrCodeDataUrl = null;
 
   try {
-    const { version } = await fetchLatestBaileysVersion();
+    console.log("[Baileys] Fetching WA version...");
+    let version: [number, number, number];
+    try {
+      const result = await fetchLatestBaileysVersion();
+      version = result.version;
+      console.log("[Baileys] WA version:", version);
+    } catch (err) {
+      console.warn("[Baileys] fetchLatestBaileysVersion failed, using fallback:", err);
+      version = [2, 3000, 1023456789];
+    }
+
+    console.log("[Baileys] Loading auth state...");
     const { state, saveCreds } = await makeDbAuthState();
 
+    console.log("[Baileys] Creating socket...");
     sock = makeWASocket({
       version,
       auth: state,
       logger: (await import("pino")).default({ level: "silent" }),
       browser: ["Villa Campito", "Chrome", "1.0.0"],
     });
+    console.log("[Baileys] Socket created, waiting for QR or connection...");
   } catch (err) {
     console.error("[Baileys] Failed to start:", err);
     connectionStatus = "disconnected";
