@@ -1,11 +1,11 @@
 // client/src/components/admin/CampaignsPanel.tsx
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Send, Loader2, Pause, Play, Ban, Search, Megaphone } from "lucide-react";
+import { Send, Loader2, Pause, Play, Ban, Search, Megaphone, ImagePlus, X } from "lucide-react";
 
 type Props = { password: string };
 
@@ -27,6 +27,10 @@ export default function CampaignsPanel({ password }: Props) {
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreview, setImagePreview] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
 
@@ -38,10 +42,49 @@ export default function CampaignsPanel({ password }: Props) {
       toast.success("Campaña creada, el envío empezará en unos segundos");
       setMessage("");
       setSelectedIds(new Set());
+      removeImage();
       utils.whatsapp.campaigns.getAll.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    setImagePreview(previewUrl);
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const response = await fetch("/api/upload/campaign-image", {
+        method: "POST",
+        headers: { "x-admin-password": password },
+        body: formData,
+      });
+
+      if (!response.ok) throw new Error("Upload failed");
+
+      const { url } = await response.json();
+      setImageUrl(url);
+    } catch (err) {
+      console.error("Upload error:", err);
+      setImagePreview("");
+      setImageUrl("");
+      toast.error("Error al subir la imagen. Inténtalo de nuevo.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeImage = () => {
+    setImageUrl("");
+    setImagePreview("");
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const pause = trpc.whatsapp.campaigns.pause.useMutation({
     onSuccess: () => utils.whatsapp.campaigns.getAll.invalidate(),
@@ -69,7 +112,12 @@ export default function CampaignsPanel({ password }: Props) {
 
   const handleCreate = () => {
     if (!message.trim() || selectedIds.size === 0) return;
-    create.mutate({ password, message: message.trim(), clientIds: [...selectedIds] });
+    create.mutate({
+      password,
+      message: message.trim(),
+      clientIds: [...selectedIds],
+      imageUrl: imageUrl || undefined,
+    });
   };
 
   return (
@@ -78,7 +126,8 @@ export default function CampaignsPanel({ password }: Props) {
         <p className="font-medium mb-1">Anti-baneo activado</p>
         <p>
           Los mensajes se envían con un intervalo aleatorio de ~90-150 segundos, en orden aleatorio y con
-          pausas extra cada 25 envíos, respetando un límite diario. La campaña puede tardar en completarse.
+          pausas extra cada 25 envíos, respetando un límite diario. Solo se envían entre las <strong>9:00 y las 22:00</strong>;
+          fuera de ese horario se retienen hasta la siguiente franja. La campaña puede tardar en completarse.
         </p>
       </div>
 
@@ -91,6 +140,41 @@ export default function CampaignsPanel({ password }: Props) {
           rows={4}
           className="text-sm"
         />
+
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            className="hidden"
+            id="campaign-image-input"
+          />
+          {imagePreview ? (
+            <div className="relative inline-block">
+              <img src={imagePreview} alt="Vista previa" className="h-32 rounded-lg border border-gray-200 object-cover" />
+              {uploading && (
+                <div className="absolute inset-0 bg-white/60 flex items-center justify-center rounded-lg">
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-600" />
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={removeImage}
+                className="absolute -top-2 -right-2 bg-white rounded-full shadow p-1 text-gray-500 hover:text-red-500"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <label
+              htmlFor="campaign-image-input"
+              className="inline-flex items-center gap-2 text-sm text-gray-600 border border-dashed border-gray-300 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50"
+            >
+              <ImagePlus className="w-4 h-4" /> Adjuntar foto (opcional)
+            </label>
+          )}
+        </div>
 
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-gray-700">
@@ -135,7 +219,7 @@ export default function CampaignsPanel({ password }: Props) {
 
         <Button
           onClick={handleCreate}
-          disabled={!message.trim() || selectedIds.size === 0 || create.isPending}
+          disabled={!message.trim() || selectedIds.size === 0 || create.isPending || uploading}
           className="bg-[oklch(0.28_0.07_245)] hover:opacity-90 self-start"
         >
           {create.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}

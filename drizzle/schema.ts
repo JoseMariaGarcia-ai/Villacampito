@@ -176,6 +176,8 @@ export const villaSettings = mysqlTable("villaSettings", {
 export const campaigns = mysqlTable("campaigns", {
   id: int("id").autoincrement().primaryKey(),
   message: text("message").notNull(),
+  /** Optional image sent together with the message as a single WhatsApp media message */
+  imageUrl: text("imageUrl"),
   status: mysqlEnum("status", ["running", "paused", "completed", "cancelled"]).default("running").notNull(),
   totalRecipients: int("totalRecipients").notNull(),
   sentCount: int("sentCount").default(0).notNull(),

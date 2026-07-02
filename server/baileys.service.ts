@@ -286,7 +286,9 @@ export async function sendManualMessage(jid: string, text: string) {
  *      human taking a break rather than a script running non-stop.
  *   4. Daily send cap — refuses to send once DAILY_CAMPAIGN_LIMIT is hit
  *      in a rolling 24h window, resuming automatically the next day.
- *   5. Only sends while the WhatsApp socket is actually connected.
+ *   5. Only sends within business hours (9:00-22:00, Europe/Madrid) —
+ *      outside that window sends are held and retried on the next tick.
+ *   6. Only sends while the WhatsApp socket is actually connected.
  */
 
 const CAMPAIGN_MIN_GAP_MS = 90_000;
@@ -295,6 +297,9 @@ const CAMPAIGN_BATCH_SIZE = 25;
 const CAMPAIGN_BATCH_PAUSE_MIN_MS = 5 * 60_000;
 const CAMPAIGN_BATCH_PAUSE_MAX_MS = 10 * 60_000;
 const DAILY_CAMPAIGN_LIMIT = 150;
+const SENDING_HOUR_START = 9;
+const SENDING_HOUR_END = 22;
+const CAMPAIGN_TIMEZONE = "Europe/Madrid";
 
 let campaignNextAllowedAt = 0;
 let campaignSentSinceBatch = 0;
@@ -304,10 +309,18 @@ function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
 
+function isWithinSendingHours(): boolean {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: CAMPAIGN_TIMEZONE }).format(new Date())
+  );
+  return hour >= SENDING_HOUR_START && hour < SENDING_HOUR_END;
+}
+
 async function processCampaignQueue() {
   try {
     if (Date.now() < campaignNextAllowedAt) return;
     if (!sock || connectionStatus !== "open") return;
+    if (!isWithinSendingHours()) return;
 
     const { getNextPendingRecipient, markRecipientSent, markRecipientFailed, getCampaignSentCountLast24h } =
       await import("./whatsapp.db");
@@ -320,7 +333,15 @@ async function processCampaignQueue() {
 
     const jid = `${recipient.phone}@s.whatsapp.net`;
     try {
-      await sock.sendMessage(jid, { text: recipient.campaignMessage });
+      if (recipient.campaignImageUrl) {
+        const { ENV } = await import("./_core/env");
+        const imageUrl = recipient.campaignImageUrl.startsWith("/")
+          ? `${ENV.publicUrl}${recipient.campaignImageUrl}`
+          : recipient.campaignImageUrl;
+        await sock.sendMessage(jid, { image: { url: imageUrl }, caption: recipient.campaignMessage });
+      } else {
+        await sock.sendMessage(jid, { text: recipient.campaignMessage });
+      }
       await markRecipientSent(recipient.id, recipient.campaignId);
       console.log(`[Campaign] Sent to ${recipient.phone} (campaign ${recipient.campaignId})`);
     } catch (err) {

@@ -256,12 +256,17 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 /** Creates a campaign and its recipients in randomized order (anti-ban: no predictable send pattern). */
-export async function createCampaign(message: string, recipients: { name: string; phone: string }[]) {
+export async function createCampaign(
+  message: string,
+  recipients: { name: string; phone: string }[],
+  imageUrl?: string | null
+) {
   const db = await getDb();
   if (!db) return null;
   const shuffled = shuffle(recipients);
   const result = await db.insert(campaigns).values({
     message,
+    imageUrl: imageUrl ?? null,
     totalRecipients: shuffled.length,
   });
   const campaignId = (result[0] as any).insertId;
@@ -304,7 +309,9 @@ export async function cancelCampaign(id: number) {
  * running campaign first (FIFO), oldest pending recipient within it.
  * Only one recipient is ever returned so the caller can pace sends globally.
  */
-export async function getNextPendingRecipient(): Promise<(CampaignRecipient & { campaignMessage: string }) | null> {
+export async function getNextPendingRecipient(): Promise<
+  (CampaignRecipient & { campaignMessage: string; campaignImageUrl: string | null }) | null
+> {
   const db = await getDb();
   if (!db) return null;
   const runningCampaigns = await db
@@ -321,7 +328,7 @@ export async function getNextPendingRecipient(): Promise<(CampaignRecipient & { 
       .orderBy(asc(campaignRecipients.id))
       .limit(1);
     if (pending[0]) {
-      return { ...pending[0], campaignMessage: campaign.message };
+      return { ...pending[0], campaignMessage: campaign.message, campaignImageUrl: campaign.imageUrl };
     }
     // No pending recipients left in this running campaign — mark it completed.
     await db.update(campaigns).set({ status: "completed" }).where(eq(campaigns.id, campaign.id));

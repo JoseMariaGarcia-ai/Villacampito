@@ -85,6 +85,7 @@ async function runMigrations() {
       `CREATE TABLE IF NOT EXISTS \`campaigns\` (
         \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
         \`message\` TEXT NOT NULL,
+        \`imageUrl\` TEXT,
         \`status\` ENUM('running','paused','completed','cancelled') NOT NULL DEFAULT 'running',
         \`totalRecipients\` INT NOT NULL,
         \`sentCount\` INT NOT NULL DEFAULT 0,
@@ -102,6 +103,13 @@ async function runMigrations() {
     ];
     for (const sql of stmts) {
       await conn.execute(sql);
+    }
+    // Column added after the campaigns table already existed in some deployments —
+    // add it defensively, ignoring the "duplicate column" error if it's already there.
+    try {
+      await conn.execute("ALTER TABLE `campaigns` ADD COLUMN `imageUrl` TEXT");
+    } catch (err: any) {
+      if (err?.code !== "ER_DUP_FIELDNAME") throw err;
     }
     console.log("[DB] Migrations complete.");
   } catch (err) {
@@ -156,6 +164,29 @@ async function startServer() {
       const suffix = Math.random().toString(36).substring(2, 10);
       const ext = req.file.originalname.split(".").pop() || "jpg";
       const key = `offers/offer-${Date.now()}-${suffix}.${ext}`;
+      const { url } = await storagePut(key, req.file.buffer, req.file.mimetype);
+      res.json({ url });
+    } catch (err) {
+      console.error("[Upload] Error:", err);
+      res.status(500).json({ error: "Upload failed" });
+    }
+  });
+
+  // Image upload endpoint for WhatsApp bulk campaigns
+  app.post("/api/upload/campaign-image", upload.single("image"), async (req, res) => {
+    try {
+      const adminPassword = req.headers["x-admin-password"] as string;
+      if (adminPassword !== ENV.adminPassword) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({ error: "No file provided" });
+        return;
+      }
+      const suffix = Math.random().toString(36).substring(2, 10);
+      const ext = req.file.originalname.split(".").pop() || "jpg";
+      const key = `campaigns/campaign-${Date.now()}-${suffix}.${ext}`;
       const { url } = await storagePut(key, req.file.buffer, req.file.mimetype);
       res.json({ url });
     } catch (err) {

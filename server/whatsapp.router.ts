@@ -153,6 +153,7 @@ export const whatsappRouter = router({
         password: z.string(),
         message: z.string().min(1, "El mensaje es obligatorio"),
         clientIds: z.array(z.number()).min(1, "Selecciona al menos un cliente"),
+        imageUrl: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
         const all = await getAllClients();
@@ -162,7 +163,8 @@ export const whatsappRouter = router({
         }
         const campaign = await createCampaign(
           input.message,
-          selected.map((c) => ({ name: c.name, phone: c.phone }))
+          selected.map((c) => ({ name: c.name, phone: c.phone })),
+          input.imageUrl
         );
         return { campaign };
       }),
