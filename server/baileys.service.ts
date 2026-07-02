@@ -18,6 +18,7 @@ import {
   deleteAllSessions,
 } from "./whatsapp.db";
 import { generateReply } from "./claude.service";
+import { createClientIfNotExists } from "./db";
 
 const AUTH_KEY_PREFIX = "baileys-auth-";
 
@@ -245,6 +246,9 @@ export async function startBaileys() {
         const conversation = await getOrCreateConversation(jid, pushName, phone);
         await saveMessage(conversation.id, "inbound", body, msg.key.id ?? undefined);
         await updateConversationPreview(conversation.id, body, true);
+
+        // Auto-register the sender in the clients directory (skipped if phone already exists)
+        await createClientIfNotExists({ name: pushName, phone });
 
         // Check AI switches
         const globalEnabled = await getAiGlobalEnabled();

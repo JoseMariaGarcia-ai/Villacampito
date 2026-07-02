@@ -151,6 +151,18 @@ export async function createClient(data: { name: string; phone: string }) {
   return rows[0] ?? null;
 }
 
+/**
+ * Insert a client only if no row with this phone already exists.
+ * Used to auto-register WhatsApp contacts without creating duplicates.
+ */
+export async function createClientIfNotExists(data: { name: string; phone: string }) {
+  const db = await getDb();
+  if (!db) return null;
+  const existing = await db.select().from(clients).where(eq(clients.phone, data.phone)).limit(1);
+  if (existing.length > 0) return existing[0];
+  return createClient(data);
+}
+
 export async function deleteClient(id: number) {
   const db = await getDb();
   if (!db) return false;
