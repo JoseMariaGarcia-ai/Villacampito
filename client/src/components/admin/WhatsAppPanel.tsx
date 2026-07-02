@@ -170,6 +170,14 @@ export default function WhatsAppPanel({ password }: Props) {
       </div>
 
       {/* QR code section */}
+      {st === "connecting" && !status.data?.qr && (
+        <div className="flex flex-col items-center gap-3 py-8 bg-yellow-50 border-b border-yellow-100">
+          <Loader2 className="w-6 h-6 animate-spin text-yellow-600" />
+          <p className="text-sm text-yellow-800 font-medium">Generando código QR…</p>
+          <p className="text-xs text-yellow-600">Espera unos segundos</p>
+        </div>
+      )}
+
       {status.data?.qr && (
         <div className="flex flex-col items-center gap-3 py-8 bg-yellow-50 border-b border-yellow-100">
           <QrCode className="w-5 h-5 text-yellow-700" />
