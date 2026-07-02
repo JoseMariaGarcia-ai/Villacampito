@@ -23,6 +23,7 @@ let sock: WASocket | null = null;
 let qrCode: string | null = null;
 let qrCodeDataUrl: string | null = null;
 let connectionStatus: "disconnected" | "connecting" | "open" = "disconnected";
+let isStarting = false;
 
 export function getConnectionStatus() {
   return connectionStatus;
@@ -108,8 +109,28 @@ export async function startBaileys() {
     fetchLatestBaileysVersion,
   } = await import("@whiskeysockets/baileys");
 
+  // Prevent overlapping connection attempts (e.g. multiple reconnect clicks,
+  // or a redeploy racing with an in-flight connection). Each unclosed
+  // socket consumes a WhatsApp linked-device slot even if never fully
+  // authenticated, so we always tear down any previous socket first.
+  if (isStarting) {
+    console.log("[Baileys] Start already in progress, skipping duplicate call");
+    return sock;
+  }
+  isStarting = true;
+
+  if (sock) {
+    try {
+      sock.end(undefined);
+    } catch {
+      // ignore errors closing a stale socket
+    }
+    sock = null;
+  }
+
   connectionStatus = "connecting";
   qrCode = null;
+  qrCodeDataUrl = null;
 
   const { version } = await fetchLatestBaileysVersion();
   const { state, saveCreds } = await makeDbAuthState();
@@ -120,6 +141,7 @@ export async function startBaileys() {
     logger: (await import("pino")).default({ level: "silent" }),
     browser: ["Villa Campito", "Chrome", "1.0.0"],
   });
+  isStarting = false;
 
   // Persist credentials on every update
   sock.ev.on("creds.update", saveCreds);
