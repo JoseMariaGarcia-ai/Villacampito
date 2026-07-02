@@ -10,6 +10,24 @@ import { serveStatic, setupVite } from "./vite";
 import { storagePut, UPLOADS_DIR } from "../storage";
 import { startBaileys } from "../baileys.service";
 import multer from "multer";
+import { drizzle } from "drizzle-orm/mysql2";
+import { migrate } from "drizzle-orm/mysql2/migrator";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+async function runMigrations() {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    console.log("[DB] Running migrations...");
+    const db = drizzle(process.env.DATABASE_URL);
+    await migrate(db, { migrationsFolder: path.join(__dirname, "../../drizzle") });
+    console.log("[DB] Migrations complete.");
+  } catch (err) {
+    console.error("[DB] Migration error:", err);
+  }
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -95,4 +113,4 @@ async function startServer() {
   });
 }
 
-startServer().catch(console.error);
+runMigrations().then(() => startServer()).catch(console.error);
