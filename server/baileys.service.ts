@@ -132,15 +132,22 @@ export async function startBaileys() {
   qrCode = null;
   qrCodeDataUrl = null;
 
-  const { version } = await fetchLatestBaileysVersion();
-  const { state, saveCreds } = await makeDbAuthState();
+  try {
+    const { version } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } = await makeDbAuthState();
 
-  sock = makeWASocket({
-    version,
-    auth: state,
-    logger: (await import("pino")).default({ level: "silent" }),
-    browser: ["Villa Campito", "Chrome", "1.0.0"],
-  });
+    sock = makeWASocket({
+      version,
+      auth: state,
+      logger: (await import("pino")).default({ level: "silent" }),
+      browser: ["Villa Campito", "Chrome", "1.0.0"],
+    });
+  } catch (err) {
+    console.error("[Baileys] Failed to start:", err);
+    connectionStatus = "disconnected";
+    isStarting = false;
+    return null;
+  }
   isStarting = false;
 
   // Persist credentials on every update
