@@ -10,19 +10,81 @@ import { serveStatic, setupVite } from "./vite";
 import { storagePut, UPLOADS_DIR } from "../storage";
 import { startBaileys } from "../baileys.service";
 import multer from "multer";
-import { drizzle } from "drizzle-orm/mysql2";
-import { migrate } from "drizzle-orm/mysql2/migrator";
-import path from "path";
+import mysql from "mysql2/promise";
 
 async function runMigrations() {
   if (!process.env.DATABASE_URL) return;
+  let conn: mysql.Connection | null = null;
   try {
     console.log("[DB] Running migrations...");
-    const db = drizzle(process.env.DATABASE_URL);
-    await migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+    conn = await mysql.createConnection(process.env.DATABASE_URL);
+    const stmts = [
+      `CREATE TABLE IF NOT EXISTS \`whatsappSessions\` (
+        \`id\` VARCHAR(64) NOT NULL PRIMARY KEY,
+        \`data\` TEXT NOT NULL,
+        \`updatedAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`whatsappConversations\` (
+        \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
+        \`jid\` VARCHAR(64) NOT NULL UNIQUE,
+        \`name\` VARCHAR(200),
+        \`phone\` VARCHAR(30),
+        \`aiEnabled\` BOOLEAN NOT NULL DEFAULT TRUE,
+        \`unreadCount\` INT NOT NULL DEFAULT 0,
+        \`lastMessageAt\` TIMESTAMP NULL,
+        \`lastMessagePreview\` VARCHAR(300),
+        \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`whatsappMessages\` (
+        \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
+        \`conversationId\` INT NOT NULL,
+        \`role\` ENUM('inbound','outbound_manual','outbound_ai') NOT NULL,
+        \`body\` TEXT NOT NULL,
+        \`waMessageId\` VARCHAR(128) UNIQUE,
+        \`status\` ENUM('sent','delivered','read','failed') DEFAULT 'sent',
+        \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`villaPrompt\` (
+        \`id\` INT NOT NULL DEFAULT 1 PRIMARY KEY,
+        \`prompt\` TEXT NOT NULL,
+        \`updatedAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`villaKnowledge\` (
+        \`id\` INT NOT NULL DEFAULT 1 PRIMARY KEY,
+        \`content\` TEXT NOT NULL,
+        \`updatedAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`villaSettings\` (
+        \`id\` INT NOT NULL DEFAULT 1 PRIMARY KEY,
+        \`aiGlobalEnabled\` BOOLEAN NOT NULL DEFAULT TRUE,
+        \`updatedAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`occupiedDates\` (
+        \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
+        \`date\` VARCHAR(10) NOT NULL UNIQUE,
+        \`note\` TEXT,
+        \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`,
+      `CREATE TABLE IF NOT EXISTS \`offers\` (
+        \`id\` INT AUTO_INCREMENT NOT NULL PRIMARY KEY,
+        \`title\` VARCHAR(200) NOT NULL,
+        \`description\` TEXT NOT NULL,
+        \`discount\` VARCHAR(100),
+        \`imageUrl\` TEXT,
+        \`active\` BOOLEAN NOT NULL DEFAULT FALSE,
+        \`createdAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        \`updatedAt\` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`,
+    ];
+    for (const sql of stmts) {
+      await conn.execute(sql);
+    }
     console.log("[DB] Migrations complete.");
   } catch (err) {
     console.error("[DB] Migration error:", err);
+  } finally {
+    await conn?.end();
   }
 }
 
