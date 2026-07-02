@@ -10,11 +10,11 @@ import { serveStatic, setupVite } from "./vite";
 import { storagePut, UPLOADS_DIR } from "../storage";
 import { startBaileys } from "../baileys.service";
 import multer from "multer";
-import mysql from "mysql2/promise";
+import mysql, { type Connection } from "mysql2/promise";
 
 async function runMigrations() {
   if (!process.env.DATABASE_URL) return;
-  let conn: mysql.Connection | null = null;
+  let conn: Connection | null = null;
   try {
     console.log("[DB] Running migrations...");
     conn = await mysql.createConnection(process.env.DATABASE_URL);
