@@ -126,7 +126,7 @@ function AdminCalendar({
           const canSelect = mode === "add" ? !isOccupied : isOccupied;
 
           let bgClass = "bg-white hover:bg-gray-50";
-          if (isOccupied && !isSelected) bgClass = "bg-red-100 text-red-700";
+          if (isOccupied && !isSelected) bgClass = "bg-red-400 text-white";
           if (isSelected && mode === "add") bgClass = "bg-red-500 text-white";
           if (isSelected && mode === "remove") bgClass = "bg-green-500 text-white";
 
@@ -147,7 +147,7 @@ function AdminCalendar({
 
       <div className="flex flex-wrap gap-4 mt-4 text-xs text-gray-500">
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-white border border-gray-200" /> Libre</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 border border-red-200" /> Ocupado</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-400 border border-red-500" /> Ocupado</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded ring-2 ring-blue-400" /> Hoy</span>
         {mode === "add" && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500" /> Seleccionado (marcar)</span>}
         {mode === "remove" && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500" /> Seleccionado (liberar)</span>}
