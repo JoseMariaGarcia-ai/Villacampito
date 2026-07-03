@@ -216,7 +216,7 @@ export async function startBaileys() {
         // to be scanned before we tear it down and issue a new one. A short
         // delay here was causing the QR to refresh every few seconds if the
         // socket kept closing right after pairing began.
-        setTimeout(() => startBaileys(), 20_000);
+        setTimeout(() => startBaileys(), 60_000);
       }
     }
   });
