@@ -175,7 +175,11 @@ export async function startBaileys() {
     sock = makeWASocket({
       version,
       auth: authState.state,
-      logger: (await import("pino")).default({ level: "silent" }),
+      // Temporarily raised from "silent" to "warn" to diagnose the QR
+      // pairing hang — internal Baileys/Signal protocol errors were
+      // previously suppressed entirely, leaving no trace when a pairing
+      // attempt failed silently after the phone showed "Iniciando sesión".
+      logger: (await import("pino")).default({ level: "warn" }),
       browser: ["Villa Campito", "Chrome", "1.0.0"],
     });
     console.log("[Baileys] Socket created, waiting for QR or connection...");
@@ -192,7 +196,15 @@ export async function startBaileys() {
 
   // Handle connection state changes
   sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
+    const { connection, lastDisconnect, qr, isNewLogin, isOnline, receivedPendingNotifications } = update;
+
+    // Log every field Baileys gives us — not just qr/open/close — so we can
+    // see exactly what happens during the "Iniciando sesión..." phase on the
+    // phone, which previously left no trace in our logs at all.
+    console.log(
+      `[Baileys] connection.update: connection=${connection} qr=${qr ? "present" : "none"} ` +
+      `isNewLogin=${isNewLogin} isOnline=${isOnline} receivedPendingNotifications=${receivedPendingNotifications}`
+    );
 
     if (qr) {
       qrCode = qr;
