@@ -71,8 +71,8 @@ export async function resetBaileysSession() {
 }
 
 /** DB-backed auth state adapter for Baileys */
-async function makeDbAuthState() {
-  const { initAuthCreds, BufferJSON } = await import("@whiskeysockets/baileys");
+async function makeDbAuthState(logger: unknown) {
+  const { initAuthCreds, BufferJSON, makeCacheableSignalKeyStore } = await import("@whiskeysockets/baileys");
   const KEY_PREFIX = AUTH_KEY_PREFIX;
 
   // Baileys keys contain Uint8Array/Buffer values (noiseKey.public, etc).
@@ -102,30 +102,36 @@ async function makeDbAuthState() {
   const savedCreds = await readData("creds");
   const creds = savedCreds ?? initAuthCreds();
 
+  const rawKeyStore = {
+    get: async (type: string, ids: string[]) => {
+      const data: Record<string, unknown> = {};
+      await Promise.all(
+        ids.map(async (id) => {
+          const val = await readData(`${type}-${id}`);
+          if (val) data[id] = val;
+        })
+      );
+      return data;
+    },
+    set: async (data: Record<string, Record<string, unknown>>) => {
+      await Promise.all(
+        Object.entries(data).flatMap(([type, ids]) =>
+          Object.entries(ids).map(([id, val]) =>
+            val ? writeData(`${type}-${id}`, val) : removeData(`${type}-${id}`)
+          )
+        )
+      );
+    },
+  };
+
   return {
     state: {
       creds,
-      keys: {
-        get: async (type: string, ids: string[]) => {
-          const data: Record<string, unknown> = {};
-          await Promise.all(
-            ids.map(async (id) => {
-              const val = await readData(`${type}-${id}`);
-              if (val) data[id] = val;
-            })
-          );
-          return data;
-        },
-        set: async (data: Record<string, Record<string, unknown>>) => {
-          await Promise.all(
-            Object.entries(data).flatMap(([type, ids]) =>
-              Object.entries(ids).map(([id, val]) =>
-                val ? writeData(`${type}-${id}`, val) : removeData(`${type}-${id}`)
-              )
-            )
-          );
-        },
-      },
+      // Wraps our raw DB-backed store with Baileys' recommended in-memory
+      // cache layer — avoids redundant DB round-trips for the same signal
+      // key during a single decrypt/encrypt cycle, matching the pattern
+      // used by useMultiFileAuthState internally.
+      keys: makeCacheableSignalKeyStore(rawKeyStore, logger),
     },
     saveCreds: async (creds: unknown) => {
       await writeData("creds", creds);
@@ -190,19 +196,21 @@ export async function startBaileys(isManual = false) {
       version = [2, 3000, 1023456789];
     }
 
+    // Temporarily raised from "silent" to "warn" to diagnose the QR
+    // pairing hang — internal Baileys/Signal protocol errors were
+    // previously suppressed entirely, leaving no trace when a pairing
+    // attempt failed silently after the phone showed "Iniciando sesión".
+    const pinoLogger = (await import("pino")).default({ level: "warn" });
+
     console.log("[Baileys] Loading auth state...");
-    const authState = await makeDbAuthState();
+    const authState = await makeDbAuthState(pinoLogger);
     saveCreds = authState.saveCreds;
 
     console.log("[Baileys] Creating socket...");
     sock = makeWASocket({
       version,
       auth: authState.state,
-      // Temporarily raised from "silent" to "warn" to diagnose the QR
-      // pairing hang — internal Baileys/Signal protocol errors were
-      // previously suppressed entirely, leaving no trace when a pairing
-      // attempt failed silently after the phone showed "Iniciando sesión".
-      logger: (await import("pino")).default({ level: "warn" }),
+      logger: pinoLogger,
       browser: ["Villa Campito", "Chrome", "1.0.0"],
     });
     console.log("[Baileys] Socket created, waiting for QR or connection...");
