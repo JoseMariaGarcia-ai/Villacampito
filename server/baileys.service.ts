@@ -22,11 +22,19 @@ import { createClientIfNotExists } from "./db";
 
 const AUTH_KEY_PREFIX = "baileys-auth-";
 
+// Give up auto-reconnecting after this many consecutive failures and require
+// a manual "Reconectar" click instead. Without this cap, a persistent
+// failure (e.g. WhatsApp temporarily blocking this server's connection
+// attempts) causes an infinite retry loop that hammers WhatsApp's servers
+// non-stop — which itself can prolong or trigger such a block.
+const MAX_AUTO_RECONNECT_ATTEMPTS = 3;
+
 // Lazy import to avoid loading Baileys until the service starts
 let sock: WASocket | null = null;
 let qrCode: string | null = null;
 let connectionStatus: "disconnected" | "connecting" | "open" = "disconnected";
 let isStarting = false;
+let consecutiveFailures = 0;
 
 export function getConnectionStatus() {
   return connectionStatus;
@@ -58,6 +66,7 @@ export async function resetBaileysSession() {
   await deleteAllSessions(AUTH_KEY_PREFIX);
   connectionStatus = "disconnected";
   qrCode = null;
+  consecutiveFailures = 0;
   console.log("[Baileys] Session reset — credentials wiped");
 }
 
@@ -124,7 +133,7 @@ async function makeDbAuthState() {
   };
 }
 
-export async function startBaileys() {
+export async function startBaileys(isManual = false) {
   const {
     default: makeWASocket,
     DisconnectReason,
@@ -139,6 +148,20 @@ export async function startBaileys() {
     console.log("[Baileys] Start already in progress, skipping duplicate call");
     return sock;
   }
+
+  // A manual click (from the admin panel) always resets the failure count —
+  // the user is explicitly asking us to try again.
+  if (isManual) consecutiveFailures = 0;
+
+  if (consecutiveFailures >= MAX_AUTO_RECONNECT_ATTEMPTS) {
+    console.log(
+      `[Baileys] ${consecutiveFailures} consecutive failures reached — pausing auto-reconnect. ` +
+      `Use "Reconectar" or "Resetear sesión" in the admin panel to try again.`
+    );
+    connectionStatus = "disconnected";
+    return sock;
+  }
+
   isStarting = true;
 
   if (sock) {
@@ -187,6 +210,7 @@ export async function startBaileys() {
     console.error("[Baileys] Failed to start:", err);
     connectionStatus = "disconnected";
     isStarting = false;
+    consecutiveFailures++;
     return null;
   }
   isStarting = false;
@@ -215,6 +239,7 @@ export async function startBaileys() {
     if (connection === "open") {
       qrCode = null;
       connectionStatus = "open";
+      consecutiveFailures = 0;
       console.log("[Baileys] Connected to WhatsApp");
     }
 
@@ -222,13 +247,22 @@ export async function startBaileys() {
       connectionStatus = "disconnected";
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.log(`[Baileys] Disconnected. statusCode=${statusCode} error=${lastDisconnect?.error?.message} reconnect=${shouldReconnect}`);
-      if (shouldReconnect) {
+      consecutiveFailures++;
+      console.log(
+        `[Baileys] Disconnected. statusCode=${statusCode} error=${lastDisconnect?.error?.message} ` +
+        `reconnect=${shouldReconnect} consecutiveFailures=${consecutiveFailures}`
+      );
+      if (shouldReconnect && consecutiveFailures < MAX_AUTO_RECONNECT_ATTEMPTS) {
         // Wait long enough that a QR just shown to the user has a real chance
         // to be scanned before we tear it down and issue a new one. A short
         // delay here was causing the QR to refresh every few seconds if the
         // socket kept closing right after pairing began.
         setTimeout(() => startBaileys(), 60_000);
+      } else if (shouldReconnect) {
+        console.log(
+          `[Baileys] Giving up auto-reconnect after ${consecutiveFailures} consecutive failures. ` +
+          `Click "Reconectar" or "Resetear sesión" in the admin panel to try again manually.`
+        );
       }
     }
   });

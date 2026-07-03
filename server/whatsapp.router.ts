@@ -52,13 +52,13 @@ export const whatsappRouter = router({
   })),
 
   reconnect: adminProcedure.mutation(async () => {
-    await startBaileys();
+    await startBaileys(true);
     return { ok: true };
   }),
 
   resetSession: adminProcedure.mutation(async () => {
     await resetBaileysSession();
-    await startBaileys();
+    await startBaileys(true);
     return { ok: true };
   }),
 
