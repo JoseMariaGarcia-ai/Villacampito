@@ -212,7 +212,11 @@ export async function startBaileys() {
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       console.log(`[Baileys] Disconnected. statusCode=${statusCode} error=${lastDisconnect?.error?.message} reconnect=${shouldReconnect}`);
       if (shouldReconnect) {
-        setTimeout(() => startBaileys(), 5000);
+        // Wait long enough that a QR just shown to the user has a real chance
+        // to be scanned before we tear it down and issue a new one. A short
+        // delay here was causing the QR to refresh every few seconds if the
+        // socket kept closing right after pairing began.
+        setTimeout(() => startBaileys(), 20_000);
       }
     }
   });
