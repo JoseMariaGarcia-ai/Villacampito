@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { label: "Galería", href: "#galeria" },
   { label: "Vídeos", href: "#videos" },
   { label: "Normas", href: "#normas" },
+  { label: "Turismo", href: "#turismo" },
   { label: "Contacto", href: "#contacto" },
 ];
 

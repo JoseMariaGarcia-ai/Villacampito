@@ -11,6 +11,7 @@ import PricingSection from "@/components/PricingSection";
 import GallerySection from "@/components/GallerySection";
 import VideoSection from "@/components/VideoSection";
 import RulesSection from "@/components/RulesSection";
+import TourismSection from "@/components/TourismSection";
 import ContactSection from "@/components/ContactSection";
 import Footer from "@/components/Footer";
 import WhatsAppFloat from "@/components/WhatsAppFloat";
@@ -27,6 +28,7 @@ export default function Home() {
         <GallerySection />
         <VideoSection />
         <RulesSection />
+        <TourismSection />
         <ContactSection />
       </main>
       <Footer />
