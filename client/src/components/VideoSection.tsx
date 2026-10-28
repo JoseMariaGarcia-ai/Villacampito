@@ -12,13 +12,13 @@ import { VIDEO_EXTERIOR, VIDEO_INTERIOR } from "@/lib/photoUrls";
 
 const VIDEOS = [
   {
-    src: VIDEO_INTERIOR,
+    src: VIDEO_EXTERIOR,
     title: "Recorrido Exterior",
     description:
       "Descubre la piscina con 3 alturas, el bar, el jacuzzi, la cama balinesa, el chozo de bambú africano, la barbacoa y todo el jardín de Villa Campito.",
   },
   {
-    src: VIDEO_EXTERIOR,
+    src: VIDEO_INTERIOR,
     title: "Recorrido Interior",
     description:
       "Explora las 3 habitaciones, el salón-comedor, la cocina equipada, los baños y todas las comodidades del interior de la villa.",
