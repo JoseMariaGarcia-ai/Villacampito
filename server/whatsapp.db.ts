@@ -200,6 +200,7 @@ Villa de alquiler vacacional con piscina de 3 alturas, jacuzzi, chozo de bambú 
 
 ## Características interiores
 - 3 habitaciones (una con cama de matrimonio, otra con literas, otra con dos camas)
+- Sofá cama en el salón
 - 1 baño completo + 2 aseos
 - Aire acondicionado y calefacción
 - Ventiladores en todas las habitaciones
