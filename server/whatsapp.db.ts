@@ -171,28 +171,142 @@ export async function getMessagesForClaude(
 
 /* ── Villa prompt & knowledge base ── */
 
-const DEFAULT_PROMPT = `Eres el asistente virtual de Villa Campito, una villa de lujo en El Puerto de Santa María (Cádiz). 
-Tu objetivo es atender consultas de clientes de forma amable y profesional en español.
-Puedes informar sobre disponibilidad, precios, características de la villa y gestionar reservas.
-Cuando un cliente quiera reservar, confirma las fechas y recuérdales que el pago se gestiona directamente con el propietario.
-Sé conciso, cálido y usa un tono cercano pero profesional.`;
+const DEFAULT_PROMPT = `Eres el asistente virtual de Villa Campito, una villa de alquiler vacacional en El Puerto de Santa María (Cádiz).
+Tu objetivo es atender consultas de clientes por WhatsApp de forma amable, cercana y profesional, siempre en español.
 
-const DEFAULT_KNOWLEDGE = `# Villa Campito — Información general
+Puedes informar con precisión sobre: características de la villa, tarifas por temporada (usa SIEMPRE las tarifas de la base de conocimientos, nunca inventes precios), normas de la casa, disponibilidad general y zonas turísticas de interés.
 
-## Características
-- Capacidad: hasta 8 personas
-- Piscina privada
-- Jacuzzi
-- Cabaña de bambú
-- Ubicación: El Puerto de Santa María, Cádiz
+Cuando un cliente pregunte por disponibilidad de fechas concretas, dile que confirmas con el propietario y que puede consultar el calendario en tiempo real en la web. No confirmes ni bloquees reservas tú mismo.
+Cuando un cliente quiera reservar, pide fechas y número de personas, indícale la tarifa correspondiente según la base de conocimientos, y recuérdale que el pago y la confirmación final se gestionan directamente con el propietario.
 
-## Normas
-- No se permiten mascotas
-- No se permiten fiestas
-- Check-in: 17:00h | Check-out: 12:00h
+No inventes información que no esté en la base de conocimientos (por ejemplo, dirección exacta, fechas de festivos con precio especial, o disponibilidad real) — en esos casos, dile que el propietario le confirmará los detalles.
+Sé conciso (evita respuestas muy largas en WhatsApp), cálido y resolutivo.`;
+
+const DEFAULT_KNOWLEDGE = `# Villa Campito — El Puerto de Santa María, Cádiz
+
+## Resumen
+Villa de alquiler vacacional con piscina de 3 alturas, jacuzzi, chozo de bambú africano y jardín privado. Capacidad hasta 8 personas durmiendo (hasta 15 personas disfrutando de las instalaciones en eventos de día).
+
+## Características exteriores
+- Piscina con 3 alturas
+- Jacuzzi de agua fría
+- Bar integrado en la piscina
+- Cama balinesa
+- Chozo de bambú africano
+- Zona de barbacoa
+- Equipo de música exterior
+- Iluminación con domótica
+- Jardín con palmeras
+
+## Características interiores
+- 3 habitaciones (una con cama de matrimonio, otra con literas, otra con dos camas)
+- 1 baño completo + 2 aseos
+- Aire acondicionado y calefacción
+- Ventiladores en todas las habitaciones
+- Wifi
+- TV de 55 pulgadas
+- Garaje privado
+- Cocina completamente equipada
+- Cuna y trona para bebés disponibles
+- Se admiten mascotas
+
+## Check-in / Check-out
+- Check-in: 14:00h
+- Check-out: 10:00h (consultar posibilidad de otros horarios)
+
+## Tarifas 2026 (en euros, por estancia salvo que se indique otra cosa)
+
+### Enero — Febrero — Marzo / Octubre — Noviembre — Diciembre
+- Día entre semana: 250€ (más de 1 día: consultar)
+- Viernes: 350€ | Sábado: 350€ | Domingo: 250€
+- Fin de semana 2 días: 550€ | 3 días: 650€
+- Semanas y quincenas: consultar
+
+### Abril
+- Día entre semana: 250€ (más de 1 día: consultar)
+- Viernes: 450€ | Sábado: 450€ | Domingo: 300€
+- Fin de semana 2 días: 650€ | 3 días: 750€
+- Semanas y quincenas: consultar
+
+### 1 Mayo — 11 Junio
+- Día entre semana: 350€ (más de 1 día: consultar)
+- Fin de semana 2 días: 1.050€ | 3 días: 1.250€
+- Semana (lunes a lunes): 2.050€
+- Quincenas: consultar
+
+### 12 Junio — 3 Agosto
+- Día entre semana: 450€ (más de 1 día: consultar)
+- Fin de semana 2 días: 1.550€ | 3 días: 1.850€
+- Semana (lunes a lunes): 3.050€
+- Quincenas: consultar
+
+### Agosto (todo el mes)
+- Día entre semana: 450€ (más de 1 día: consultar)
+- Fin de semana 2 días: 1.650€ | 3 días: 2.050€
+- Semana (lunes a lunes): 3.500€
+- Quincenas: consultar
+
+### 1 — 15 Septiembre
+- Día entre semana: 350€ (más de 1 día: consultar)
+- Fin de semana 2 días: 1.250€ | 3 días: 1.550€
+- Semana (lunes a lunes): 2.050€
+- Quincenas: consultar
+
+### 15 — 30 Septiembre
+- Día entre semana: 250€ (más de 1 día: consultar)
+- Fin de semana 2 días: 1.050€ | 3 días: 1.250€
+- Semana (lunes a lunes): 1.550€
+- Quincenas: consultar
+
+## Tarifas 2027
+Mismas tarifas que 2026 con estas fechas ajustadas: 1 Mayo–13 Junio (como 1 Mayo–11 Junio 2026), 14 Junio–30 Julio (como 12 Junio–3 Agosto 2026), 1–12 Septiembre (como 1–15 Septiembre 2026), 13–30 Septiembre (como 15–30 Septiembre 2026). Enero-Marzo, Abril, Agosto y Octubre-Diciembre son iguales que 2026.
+
+## Fechas especiales
+Puentes, Navidad, Fin de Año, Festivos, Mundial de Motociclismo, Puro Latino y Feria tienen precios especiales — siempre hay que consultar con el propietario, no dar un precio de las tablas normales para esas fechas.
 
 ## Contacto
-- Para reservas y pagos contactar directamente con el propietario`;
+- WhatsApp / reservas: +34 640 723 374 (este mismo número)
+- El pago y la confirmación definitiva de la reserva se gestionan directamente con el propietario.
+
+## Zona — El Puerto de Santa María (información turística para huéspedes)
+### Qué ver
+- Castillo de San Marcos (fortaleza del s. XIII)
+- Ribera del Marisco (paseo de bares de pescaíto frito y marisco)
+- Plaza de Toros (una de las más grandes y antiguas de España)
+- Bodegas Fundador (bodega de brandy más antigua de España)
+- Parque Calderón (jardín junto al río)
+- Iglesia Mayor Prioral
+
+### Playas
+- Playa de Valdelagrana (la más popular, urbana, con todos los servicios)
+- Playa de La Puntilla (junto al puerto pesquero, ambiente familiar)
+- Playa de Santa Catalina — Fuentebravía (más salvaje, buena para surf)
+
+### Dónde comer
+- Romerijo (icónico desde 1954, marisco y pescaíto frito)
+- El Faro del Puerto (alta cocina gaditana)
+- Casa Flores (pescados y mariscos en la Ribera del Marisco)
+- Los Portales (cocina tradicional gaditana)
+
+### Emergencias (información general, siempre recomendar llamar al 112 ante cualquier duda)
+- Emergencias generales: 112
+- Emergencias sanitarias: 061
+- Policía Nacional: 091
+- Policía Local: 092
+- Guardia Civil: 062
+- Bomberos: 080
+- Hospital de referencia de la zona: Hospital de Jerez de la Frontera (SAS)
+
+## Normas de la villa
+- Normativa de ruidos: debe cumplirse en todo momento la normativa municipal de ruidos y emisiones acústicas
+- Aparatos de sonido: prohibido introducir aparatos de sonido propios; la villa cuenta con uno propio limitado en volumen
+- Reuniones familiares: se permiten reuniones familiares y de amigos para disfrutar de piscina, solárium, barbacoas e instalaciones
+- Fiestas: totalmente prohibido cualquier tipo de fiesta que perturbe la convivencia vecinal
+- Capacidad: hasta 8 personas durmiendo; hasta 15 personas disfrutando de las instalaciones
+- Horarios: check-in 14:00h, check-out 10:00h (consultar otros horarios)
+- Limpieza a la salida: la propiedad debe dejarse recogida y sin basura
+- Fianza: inquilinos menores de 30 años deben dejar 500€ de fianza para garantizar el cumplimiento de las normas y posibles deterioros
+- El incumplimiento de las normas puede suponer la pérdida total o parcial de la fianza`;
 
 export async function getVillaPrompt(): Promise<string> {
   const db = await getDb();
