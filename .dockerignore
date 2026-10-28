@@ -4,4 +4,3 @@ dist
 .env
 uploads
 *.log
-pnpm-lock.yaml
