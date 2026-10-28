@@ -40,7 +40,9 @@ export default function WhatsAppPanel({ password }: Props) {
 
   const status = trpc.whatsapp.status.useQuery(
     { password },
-    { refetchInterval: 5000 }
+    // Poll faster while a QR / pairing is in progress: the QR rotates every
+    // ~20s on later cycles, and the pairing itself resolves in seconds.
+    { refetchInterval: (q) => (q.state.data?.status === "open" ? 10000 : 2500) }
   );
 
   const conversations = trpc.whatsapp.conversations.useQuery(
@@ -72,11 +74,15 @@ export default function WhatsAppPanel({ password }: Props) {
   useEffect(() => {
     const qr = status.data?.qr;
     if (!qr) { setQrDataUrl(null); return; }
+    // Baileys rotates the QR every ~20-60s; if an older render resolves after
+    // a newer one we'd show a code that is already expired. Ignore stale results.
+    let cancelled = false;
     import("qrcode").then((mod) => {
       mod.default.toDataURL(qr, { width: 320, margin: 2, errorCorrectionLevel: "M" })
-        .then(setQrDataUrl)
-        .catch(() => setQrDataUrl(null));
-    }).catch(() => setQrDataUrl(null));
+        .then((url) => { if (!cancelled) setQrDataUrl(url); })
+        .catch(() => { if (!cancelled) setQrDataUrl(null); });
+    }).catch(() => { if (!cancelled) setQrDataUrl(null); });
+    return () => { cancelled = true; };
   }, [status.data?.qr]);
 
   // ── Auto-scroll messages ─────────────────────────────────────────────────
@@ -199,7 +205,9 @@ export default function WhatsAppPanel({ password }: Props) {
       {st === "connecting" && !status.data?.qr && (
         <div className="flex flex-col items-center gap-3 py-8 bg-yellow-50 border-b border-yellow-100">
           <Loader2 className="w-6 h-6 animate-spin text-yellow-600" />
-          <p className="text-sm text-yellow-800 font-medium">Generando código QR…</p>
+          <p className="text-sm text-yellow-800 font-medium">
+            {status.data?.message ?? (status.data?.hasStoredSession ? "Restaurando sesión…" : "Generando código QR…")}
+          </p>
           <p className="text-xs text-yellow-600">Espera unos segundos</p>
         </div>
       )}
@@ -237,7 +245,12 @@ export default function WhatsAppPanel({ password }: Props) {
       {/* Disconnected banner */}
       {st === "disconnected" && !status.data?.qr && (
         <div className="flex items-center justify-between px-6 py-3 bg-red-50 border-b border-red-100">
-          <p className="text-sm text-red-700">WhatsApp desconectado</p>
+          <div>
+            <p className="text-sm text-red-700">WhatsApp desconectado</p>
+            {status.data?.message && (
+              <p className="text-xs text-red-500 mt-0.5">{status.data.message}</p>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Button
               size="sm"

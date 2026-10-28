@@ -1,4 +1,4 @@
-import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, int, mediumtext, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Legacy user table from the original Manus OAuth template.
@@ -85,8 +85,10 @@ export type InsertClient = typeof clients.$inferInsert;
  * re-scanning the QR code.
  */
 export const whatsappSessions = mysqlTable("whatsappSessions", {
-  id: varchar("id", { length: 64 }).primaryKey(),
-  data: text("data").notNull(),
+  // 191 so long Baileys key ids (sender-key-<group>::<user>@lid::0) fit; kept
+  // in sync with the raw ALTER in server/_core/index.ts runMigrations().
+  id: varchar("id", { length: 191 }).primaryKey(),
+  data: mediumtext("data").notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 

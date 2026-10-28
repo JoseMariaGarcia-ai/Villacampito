@@ -111,6 +111,12 @@ async function runMigrations() {
     } catch (err: any) {
       if (err?.code !== "ER_DUP_FIELDNAME") throw err;
     }
+    // Baileys signal-key ids can exceed 64 chars once the prefix is added
+    // (e.g. "baileys-auth-sender-key-<group>@g.us::<user>@lid::0"), which in
+    // strict MySQL makes the INSERT fail and breaks message decryption; and
+    // TEXT (64KB) is tight for app-state sync blobs. MODIFY is idempotent.
+    await conn.execute("ALTER TABLE `whatsappSessions` MODIFY `id` VARCHAR(191) NOT NULL");
+    await conn.execute("ALTER TABLE `whatsappSessions` MODIFY `data` MEDIUMTEXT NOT NULL");
     console.log("[DB] Migrations complete.");
   } catch (err) {
     console.error("[DB] Migration error:", err);

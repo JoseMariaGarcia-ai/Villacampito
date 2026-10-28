@@ -18,7 +18,7 @@ import {
   deleteAllSessions,
 } from "./whatsapp.db";
 import { generateReply } from "./claude.service";
-import { createClientIfNotExists } from "./db";
+import { createClientIfNotExists, getDb } from "./db";
 
 const AUTH_KEY_PREFIX = "baileys-auth-";
 
@@ -29,12 +29,40 @@ const AUTH_KEY_PREFIX = "baileys-auth-";
 // non-stop — which itself can prolong or trigger such a block.
 const MAX_AUTO_RECONNECT_ATTEMPTS = 3;
 
-// Lazy import to avoid loading Baileys until the service starts
+// Delay before an ordinary auto-reconnect. This used to be 60s "so the QR had
+// time to be scanned", but a close event means the QR is already dead (the
+// socket that issued it is gone), so waiting only leaves the panel showing
+// "Desconectado" for a minute. The thing that *looked* like the QR refreshing
+// too fast was the stale-socket loop fixed below, not this delay.
+const RECONNECT_DELAY_MS = 15_000;
+
+// If Baileys has emitted neither a QR nor "open" nor "close" this long after
+// the socket was created, consider the attempt hung and tear it down.
+const START_WATCHDOG_MS = 90_000;
+
+// While the admin panel is open and polling `status`, allow it to kick a new
+// connection attempt at most this often when we are sitting idle/disconnected.
+const PANEL_KICKSTART_MIN_INTERVAL_MS = 60_000;
+
+export type ConnectionStatus = "disconnected" | "connecting" | "open";
+
 let sock: WASocket | null = null;
 let qrCode: string | null = null;
-let connectionStatus: "disconnected" | "connecting" | "open" = "disconnected";
-let isStarting = false;
+let connectionStatus: ConnectionStatus = "disconnected";
+let statusMessage: string | null = null;
 let consecutiveFailures = 0;
+let hasStoredSession = false;
+let lastDisconnectCode: number | null = null;
+
+// In-flight start, if any. Duplicate callers await/return this instead of
+// creating a second socket.
+let startPromise: Promise<WASocket | null> | null = null;
+// Bumped by every start and by resetBaileysSession(); an in-flight start that
+// observes a newer generation after an await aborts instead of finishing.
+let startGeneration = 0;
+let lastStartAt = 0;
+let reconnectTimer: NodeJS.Timeout | null = null;
+let watchdogTimer: NodeJS.Timeout | null = null;
 
 export function getConnectionStatus() {
   return connectionStatus;
@@ -49,31 +77,58 @@ export function getCurrentQRImage() {
   return null;
 }
 
+/** Extra detail for the admin panel (shown under the status badge). */
+export function getStatusDetails() {
+  return {
+    message: statusMessage,
+    hasStoredSession,
+    lastDisconnectCode,
+    consecutiveFailures,
+  };
+}
+
 export function getSocket() {
   return sock;
 }
 
-/** Wipe stored Baileys credentials so the next startBaileys() gets a fresh QR pairing */
-export async function resetBaileysSession() {
-  if (sock) {
-    try {
-      sock.end(undefined);
-    } catch {
-      // ignore errors closing a stale socket
-    }
-    sock = null;
+/* ── Auth write serialisation ──────────────────────────────────────────────
+ * Baileys fires `creds.update` and `keys.set` from async event handlers, so
+ * two upserts of the same row can be in flight at once on different pool
+ * connections, with no ordering guarantee — the older write can win. We chain
+ * writes per key so they apply in emission order, and keep the set of pending
+ * writes so a reconnect can flush them before re-reading creds from MySQL.
+ */
+const pendingAuthWrites = new Map<string, Promise<void>>();
+
+function enqueueAuthWrite(id: string, fn: () => Promise<void>): Promise<void> {
+  const prev = pendingAuthWrites.get(id) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(fn);
+  pendingAuthWrites.set(id, next);
+  next.finally(() => {
+    if (pendingAuthWrites.get(id) === next) pendingAuthWrites.delete(id);
+  }).catch(() => undefined);
+  return next;
+}
+
+async function flushAuthWrites() {
+  // Writes may enqueue more writes while we wait, so loop until drained.
+  while (pendingAuthWrites.size > 0) {
+    await Promise.allSettled([...pendingAuthWrites.values()]);
   }
-  await deleteAllSessions(AUTH_KEY_PREFIX);
-  connectionStatus = "disconnected";
-  qrCode = null;
-  consecutiveFailures = 0;
-  console.log("[Baileys] Session reset — credentials wiped");
 }
 
 /** DB-backed auth state adapter for Baileys */
-async function makeDbAuthState(logger: unknown) {
+async function makeDbAuthState(logger: unknown, generation: number) {
   const { initAuthCreds, BufferJSON, makeCacheableSignalKeyStore } = await import("@whiskeysockets/baileys");
   const KEY_PREFIX = AUTH_KEY_PREFIX;
+
+  // Without a DB, saveSession() silently drops every write. Pairing can then
+  // never complete: WhatsApp forces a reconnect (515) right after the scan,
+  // and the fresh socket would come up with brand-new creds the phone has
+  // never seen. Better to refuse to start with a clear message.
+  if (!(await getDb())) {
+    throw new Error("DATABASE_URL no está configurada: no se puede persistir la sesión de WhatsApp");
+  }
 
   // Baileys keys contain Uint8Array/Buffer values (noiseKey.public, etc).
   // Plain JSON.stringify/parse loses that structure, so we must use
@@ -83,24 +138,38 @@ async function makeDbAuthState(logger: unknown) {
     if (!row) return null;
     try {
       return JSON.parse(row.data, BufferJSON.reviver);
-    } catch {
+    } catch (err) {
+      console.error(`[Baileys] Stored auth entry "${id}" is corrupt, ignoring:`, err);
       return null;
     }
   };
 
-  const writeData = async (id: string, data: unknown) => {
-    await saveSession(KEY_PREFIX + id, JSON.stringify(data, BufferJSON.replacer));
+  const writeData = (id: string, data: unknown) => {
+    // A socket that has been superseded (reset / newer start) must not write
+    // its state back — it would resurrect creds we just wiped.
+    if (generation !== startGeneration) return Promise.resolve();
+    const serialized = JSON.stringify(data, BufferJSON.replacer);
+    return enqueueAuthWrite(id, () => saveSession(KEY_PREFIX + id, serialized));
   };
 
-  const removeData = async (id: string) => {
-    await deleteSession(KEY_PREFIX + id);
+  const removeData = (id: string) => {
+    if (generation !== startGeneration) return Promise.resolve();
+    return enqueueAuthWrite(id, () => deleteSession(KEY_PREFIX + id));
   };
 
-  // Baileys useMultiFileAuthState interface implemented over DB.
   // If there's no saved session yet (first run), generate fresh initial
   // credentials — Baileys needs a valid creds object, not null.
   const savedCreds = await readData("creds");
-  const creds = savedCreds ?? initAuthCreds();
+  // A partial/corrupt creds row (see saveCreds below for how that used to
+  // happen) is worse than none: Baileys would try to log in with an identity
+  // the phone doesn't know. Only accept a row that has the core key material.
+  const creds =
+    savedCreds && savedCreds.noiseKey && savedCreds.signedIdentityKey && savedCreds.signedPreKey
+      ? savedCreds
+      : initAuthCreds();
+  if (savedCreds && creds !== savedCreds) {
+    console.warn("[Baileys] Stored creds are incomplete — starting a fresh pairing instead");
+  }
 
   const rawKeyStore = {
     get: async (type: string, ids: string[]) => {
@@ -131,28 +200,116 @@ async function makeDbAuthState(logger: unknown) {
       // cache layer — avoids redundant DB round-trips for the same signal
       // key during a single decrypt/encrypt cycle, matching the pattern
       // used by useMultiFileAuthState internally.
-      keys: makeCacheableSignalKeyStore(rawKeyStore, logger),
+      keys: makeCacheableSignalKeyStore(rawKeyStore as any, logger as any),
     },
-    saveCreds: async (creds: unknown) => {
-      await writeData("creds", creds);
-    },
+    // IMPORTANT: `creds.update` carries only the *changed fields* (e.g.
+    // `{ me, account, platform }` on pair-success, or `{ nextPreKeyId: 31 }`).
+    // Baileys applies that patch to the `creds` object in place before we
+    // run, so we must persist the full `creds` object — not the event
+    // payload. The previous version saved the payload, which left a partial
+    // object in the DB; after the forced reconnect that follows every scan,
+    // the socket came up with broken creds and the phone stayed stuck on
+    // "Iniciando sesión…".
+    saveCreds: () => writeData("creds", creds),
   };
 }
 
-export async function startBaileys(isManual = false) {
-  const {
-    default: makeWASocket,
-    DisconnectReason,
-    fetchLatestBaileysVersion,
-  } = await import("@whiskeysockets/baileys");
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
 
-  // Prevent overlapping connection attempts (e.g. multiple reconnect clicks,
-  // or a redeploy racing with an in-flight connection). Each unclosed
-  // socket consumes a WhatsApp linked-device slot even if never fully
-  // authenticated, so we always tear down any previous socket first.
-  if (isStarting) {
-    console.log("[Baileys] Start already in progress, skipping duplicate call");
-    return sock;
+function clearWatchdog() {
+  if (watchdogTimer) {
+    clearTimeout(watchdogTimer);
+    watchdogTimer = null;
+  }
+}
+
+function scheduleReconnect(delayMs: number) {
+  clearReconnectTimer();
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    startBaileys().catch((err) => console.error("[Baileys] Scheduled reconnect failed:", err));
+  }, delayMs);
+}
+
+/**
+ * Detach our listeners and close a socket we no longer care about. Detaching
+ * first matters: `end()` emits a final `connection.update { close }`, and if
+ * our handler were still attached it would count a failure and schedule a
+ * reconnect that tears down the *new* socket a few seconds later (this was
+ * the loop that kept killing fresh QRs / half-finished pairings).
+ */
+function discardSocket(s: WASocket) {
+  try {
+    s.ev.removeAllListeners("connection.update");
+    s.ev.removeAllListeners("creds.update");
+    s.ev.removeAllListeners("messages.upsert");
+  } catch {
+    // ignore
+  }
+  try {
+    s.end(undefined);
+  } catch {
+    // ignore errors closing a stale socket
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); }
+    );
+  });
+}
+
+/** Wipe stored Baileys credentials so the next startBaileys() gets a fresh QR pairing */
+export async function resetBaileysSession() {
+  // Invalidate any in-flight start first, and wait for it to notice, so it
+  // can't finish after we wipe the DB and write the old creds straight back.
+  startGeneration++;
+  clearReconnectTimer();
+  clearWatchdog();
+  if (startPromise) await startPromise.catch(() => undefined);
+
+  const old = sock;
+  sock = null;
+  if (old) {
+    if (connectionStatus === "open") {
+      // Properly unlink from the phone when we can, so the dead session does
+      // not linger in "Dispositivos vinculados" (each one takes up a slot).
+      try {
+        await withTimeout(old.logout(), 5_000, "logout");
+      } catch {
+        // not connected / already closed — fall through to a plain close
+      }
+    }
+    discardSocket(old);
+  }
+  await flushAuthWrites();
+  await deleteAllSessions(AUTH_KEY_PREFIX);
+  connectionStatus = "disconnected";
+  statusMessage = "Sesión reseteada";
+  qrCode = null;
+  consecutiveFailures = 0;
+  hasStoredSession = false;
+  lastDisconnectCode = null;
+  console.log("[Baileys] Session reset — credentials wiped");
+}
+
+export async function startBaileys(isManual = false): Promise<WASocket | null> {
+  // Prevent overlapping connection attempts (startup racing with a panel
+  // click, two clicks, a reconnect timer firing during a manual start…).
+  // Each unclosed socket consumes a WhatsApp linked-device slot even if never
+  // fully authenticated, so there must only ever be one in flight.
+  if (startPromise) {
+    console.log("[Baileys] Start already in progress, joining it");
+    return startPromise;
   }
 
   // A manual click (from the admin panel) always resets the failure count —
@@ -165,118 +322,257 @@ export async function startBaileys(isManual = false) {
       `Use "Reconectar" or "Resetear sesión" in the admin panel to try again.`
     );
     connectionStatus = "disconnected";
+    statusMessage = "Reconexión automática en pausa tras varios fallos — pulsa Reconectar";
     return sock;
   }
 
-  isStarting = true;
+  startPromise = doStart().finally(() => {
+    startPromise = null;
+  });
+  return startPromise;
+}
 
+async function doStart(): Promise<WASocket | null> {
+  const gen = ++startGeneration;
+  lastStartAt = Date.now();
+  clearReconnectTimer();
+  clearWatchdog();
+
+  // Tear down any previous socket *before* anything else so it can't keep
+  // feeding events into module state while we build the new one.
   if (sock) {
-    try {
-      sock.end(undefined);
-    } catch {
-      // ignore errors closing a stale socket
-    }
+    const old = sock;
     sock = null;
+    discardSocket(old);
   }
 
   connectionStatus = "connecting";
+  statusMessage = "Iniciando conexión…";
   qrCode = null;
 
-  let saveCreds: (creds: unknown) => Promise<void>;
-
   try {
-    console.log("[Baileys] Fetching WA version...");
-    let version: [number, number, number];
-    try {
-      const result = await fetchLatestBaileysVersion();
-      version = result.version;
-      console.log("[Baileys] WA version:", version);
-    } catch (err) {
-      console.warn("[Baileys] fetchLatestBaileysVersion failed, using fallback:", err);
-      version = [2, 3000, 1023456789];
-    }
+    const {
+      default: makeWASocket,
+      fetchLatestBaileysVersion,
+    } = await import("@whiskeysockets/baileys");
 
-    // Temporarily raised from "silent" to "warn" to diagnose the QR
-    // pairing hang — internal Baileys/Signal protocol errors were
-    // previously suppressed entirely, leaving no trace when a pairing
-    // attempt failed silently after the phone showed "Iniciando sesión".
-    const pinoLogger = (await import("pino")).default({ level: "warn" });
+    // Make sure every pending creds/keys write from the previous socket has
+    // landed before we read creds back. Right after a QR scan WhatsApp forces
+    // a reconnect (515) within milliseconds of emitting the new creds; reading
+    // the DB before that write completes would restart with stale creds.
+    await flushAuthWrites();
+    if (gen !== startGeneration) return null;
+
+    let version: [number, number, number] | undefined;
+    try {
+      // Never let this hang the whole start: it's a plain HTTPS fetch of a
+      // JSON file on GitHub and previously had no timeout at all.
+      const result = await fetchLatestBaileysVersion({ timeout: 10_000 });
+      version = result.version;
+      console.log("[Baileys] WA version:", version, result.isLatest ? "(latest)" : "(fallback)");
+    } catch (err) {
+      // Fall back to the version baked into the library rather than a
+      // hard-coded one that will silently go stale.
+      console.warn("[Baileys] fetchLatestBaileysVersion failed, using library default:", (err as Error)?.message);
+    }
+    if (gen !== startGeneration) return null;
+
+    const pinoLogger = (await import("pino")).default({
+      level: process.env.BAILEYS_LOG_LEVEL || "warn",
+    });
 
     console.log("[Baileys] Loading auth state...");
-    const authState = await makeDbAuthState(pinoLogger);
-    saveCreds = authState.saveCreds;
+    const authState = await makeDbAuthState(pinoLogger, gen);
+    if (gen !== startGeneration) return null;
+
+    const creds: any = authState.state.creds;
+    hasStoredSession = !!(creds?.registered || creds?.me?.id);
+    console.log(`[Baileys] Auth loaded — ${hasStoredSession ? "restoring saved session" : "no session, will request QR"}`);
 
     console.log("[Baileys] Creating socket...");
-    sock = makeWASocket({
-      version,
+    const s = makeWASocket({
+      ...(version ? { version } : {}),
       auth: authState.state,
-      logger: pinoLogger,
+      logger: pinoLogger as any,
+      // [os, browser, version] — "Chrome" maps to a known platform type;
+      // the os string is free text and is what shows up on the phone.
       browser: ["Villa Campito", "Chrome", "1.0.0"],
+      connectTimeoutMs: 30_000,
+      defaultQueryTimeoutMs: 60_000,
+      keepAliveIntervalMs: 20_000,
+      // We don't need the chat history on the server, and the initial
+      // app-state/history sync is the phase most prone to stalling right
+      // after pairing. Skip it entirely.
+      syncFullHistory: false,
+      shouldSyncHistoryMessage: () => false,
+      // If the linked device reports itself "online", WhatsApp stops sending
+      // push notifications to the owner's phone. Keep the phone behaving
+      // normally.
+      markOnlineOnConnect: false,
+      generateHighQualityLinkPreview: false,
+      getMessage: async () => undefined,
     });
+    sock = s;
+    attachHandlers(s, authState.saveCreds);
+
+    watchdogTimer = setTimeout(() => {
+      watchdogTimer = null;
+      if (s !== sock || connectionStatus !== "connecting" || qrCode) return;
+      console.error(`[Baileys] No QR/open/close within ${START_WATCHDOG_MS}ms — treating attempt as hung`);
+      sock = null;
+      discardSocket(s);
+      connectionStatus = "disconnected";
+      statusMessage = "La conexión se quedó colgada sin generar QR";
+      consecutiveFailures++;
+      if (consecutiveFailures < MAX_AUTO_RECONNECT_ATTEMPTS) scheduleReconnect(RECONNECT_DELAY_MS);
+    }, START_WATCHDOG_MS);
+
     console.log("[Baileys] Socket created, waiting for QR or connection...");
+    return s;
   } catch (err) {
     console.error("[Baileys] Failed to start:", err);
     connectionStatus = "disconnected";
-    isStarting = false;
+    statusMessage = `Error al iniciar: ${(err as Error)?.message ?? err}`;
     consecutiveFailures++;
     return null;
   }
-  isStarting = false;
+}
 
-  // Persist credentials on every update
-  sock.ev.on("creds.update", saveCreds);
+function attachHandlers(s: WASocket, saveCreds: () => Promise<void>) {
+  // Persist credentials on every update. (Errors must not become unhandled
+  // rejections inside Baileys' event loop.)
+  s.ev.on("creds.update", () => {
+    if (s !== sock) return;
+    saveCreds().catch((err) => console.error("[Baileys] Failed to persist creds:", err));
+  });
 
-  // Handle connection state changes
-  sock.ev.on("connection.update", async (update) => {
+  s.ev.on("connection.update", async (update) => {
+    // Events from a socket we already replaced must not touch shared state.
+    if (s !== sock) return;
+
     const { connection, lastDisconnect, qr, isNewLogin, isOnline, receivedPendingNotifications } = update;
 
-    // Log every field Baileys gives us — not just qr/open/close — so we can
-    // see exactly what happens during the "Iniciando sesión..." phase on the
-    // phone, which previously left no trace in our logs at all.
     console.log(
       `[Baileys] connection.update: connection=${connection} qr=${qr ? "present" : "none"} ` +
       `isNewLogin=${isNewLogin} isOnline=${isOnline} receivedPendingNotifications=${receivedPendingNotifications}`
     );
 
     if (qr) {
+      clearWatchdog();
       qrCode = qr;
       connectionStatus = "connecting";
+      statusMessage = "Escanea el código QR";
       console.log("[Baileys] QR code ready — scan with WhatsApp");
     }
 
+    if (connection === "connecting") {
+      connectionStatus = "connecting";
+    }
+
+    if (isNewLogin) {
+      // Phone scanned the QR and pairing succeeded; WhatsApp will now close
+      // the socket with 515 and expect an immediate reconnect. Hide the QR
+      // so nobody scans a code that is already consumed.
+      qrCode = null;
+      hasStoredSession = true;
+      statusMessage = "QR escaneado — completando vinculación…";
+      console.log("[Baileys] Pairing succeeded, expecting restart from WhatsApp");
+    }
+
     if (connection === "open") {
+      clearWatchdog();
       qrCode = null;
       connectionStatus = "open";
+      statusMessage = null;
       consecutiveFailures = 0;
+      hasStoredSession = true;
+      lastDisconnectCode = null;
       console.log("[Baileys] Connected to WhatsApp");
     }
 
     if (connection === "close") {
+      clearWatchdog();
+      // The QR belonged to this (now dead) socket — never leave it on screen.
+      qrCode = null;
       connectionStatus = "disconnected";
-      const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      consecutiveFailures++;
-      console.log(
-        `[Baileys] Disconnected. statusCode=${statusCode} error=${lastDisconnect?.error?.message} ` +
-        `reconnect=${shouldReconnect} consecutiveFailures=${consecutiveFailures}`
-      );
-      if (shouldReconnect && consecutiveFailures < MAX_AUTO_RECONNECT_ATTEMPTS) {
-        // Wait long enough that a QR just shown to the user has a real chance
-        // to be scanned before we tear it down and issue a new one. A short
-        // delay here was causing the QR to refresh every few seconds if the
-        // socket kept closing right after pairing began.
-        setTimeout(() => startBaileys(), 60_000);
-      } else if (shouldReconnect) {
-        console.log(
-          `[Baileys] Giving up auto-reconnect after ${consecutiveFailures} consecutive failures. ` +
-          `Click "Reconectar" or "Resetear sesión" in the admin panel to try again manually.`
-        );
+      const err: any = lastDisconnect?.error;
+      const statusCode: number | undefined = err?.output?.statusCode;
+      lastDisconnectCode = statusCode ?? null;
+      console.log(`[Baileys] Disconnected. statusCode=${statusCode} error=${err?.message}`);
+
+      const { DisconnectReason } = await import("@whiskeysockets/baileys");
+      if (s !== sock) return; // replaced while we awaited
+
+      switch (statusCode) {
+        case DisconnectReason.restartRequired: {
+          // Expected, normal step right after a successful QR scan: not a
+          // failure, and it must be answered *immediately* — the phone shows
+          // "Iniciando sesión…" and gives up if the device doesn't come back
+          // within a short window. Waiting 60s here is exactly what made the
+          // pairing fail after scanning.
+          statusMessage = "Reiniciando conexión tras vincular…";
+          consecutiveFailures = 0; // pairing worked — this is progress, not a failure
+          await flushAuthWrites();
+          scheduleReconnect(500);
+          break;
+        }
+        case DisconnectReason.loggedOut:
+        case DisconnectReason.badSession:
+        case DisconnectReason.multideviceMismatch: {
+          // The stored credentials are dead (device unlinked from the phone,
+          // or corrupt). Reconnecting with them would just fail again, so
+          // wipe them and come back up asking for a fresh QR.
+          console.warn(`[Baileys] Session invalid (${statusCode}) — wiping stored credentials`);
+          statusMessage = "Sesión caducada en el teléfono — generando nuevo QR…";
+          await flushAuthWrites();
+          await deleteAllSessions(AUTH_KEY_PREFIX);
+          hasStoredSession = false;
+          consecutiveFailures = 0;
+          scheduleReconnect(2_000);
+          break;
+        }
+        case DisconnectReason.forbidden: {
+          // WhatsApp refused this account/IP outright. Retrying automatically
+          // only makes a temporary block longer.
+          statusMessage = "WhatsApp ha rechazado la conexión (403). No se reintentará automáticamente.";
+          console.error("[Baileys] 403 forbidden from WhatsApp — not retrying automatically");
+          break;
+        }
+        case DisconnectReason.connectionReplaced: {
+          // Another process is using the same credentials — typically the
+          // previous Railway container still running during a deploy, or a
+          // second replica. Back off generously; if we retry at once the two
+          // instances keep kicking each other out.
+          consecutiveFailures++;
+          statusMessage = "Otra instancia del servidor está usando esta sesión de WhatsApp (440)";
+          console.error("[Baileys] 440 connection replaced — another instance has this session");
+          if (consecutiveFailures < MAX_AUTO_RECONNECT_ATTEMPTS) scheduleReconnect(120_000);
+          break;
+        }
+        default: {
+          consecutiveFailures++;
+          const qrExpired = !hasStoredSession && statusCode === DisconnectReason.timedOut;
+          const base = qrExpired
+            ? "El QR caducó sin escanearse"
+            : `Desconectado (${statusCode ?? "sin código"})`;
+          if (consecutiveFailures < MAX_AUTO_RECONNECT_ATTEMPTS) {
+            statusMessage = base;
+            scheduleReconnect(RECONNECT_DELAY_MS);
+          } else {
+            console.log(
+              `[Baileys] Giving up auto-reconnect after ${consecutiveFailures} consecutive failures. ` +
+              `Click "Reconectar" or "Resetear sesión" in the admin panel to try again manually.`
+            );
+            statusMessage = `${base} — reconexión automática en pausa, pulsa Reconectar`;
+          }
+        }
       }
     }
   });
 
   // Handle incoming messages
-  sock.ev.on("messages.upsert", async ({ messages: msgs, type }) => {
+  s.ev.on("messages.upsert", async ({ messages: msgs, type }) => {
+    if (s !== sock) return;
     if (type !== "notify") return;
 
     for (const msg of msgs) {
@@ -314,7 +610,8 @@ export async function startBaileys(isManual = false) {
 
         // Generate and send AI reply
         const reply = await generateReply(conversation.id, body);
-        await sock!.sendMessage(jid, { text: reply });
+        if (s !== sock) continue; // socket replaced while Claude was thinking
+        await s.sendMessage(jid, { text: reply });
         await saveMessage(conversation.id, "outbound_ai", reply);
         await updateConversationPreview(conversation.id, reply, false);
       } catch (err) {
@@ -322,8 +619,23 @@ export async function startBaileys(isManual = false) {
       }
     }
   });
+}
 
-  return sock;
+/**
+ * Called by the admin panel's `status` poll. If we're idle (disconnected, no
+ * attempt in flight, no reconnect scheduled) start one, so that opening the
+ * panel always produces a QR / reconnect attempt without needing a click —
+ * previously, once the auto-reconnect cap was hit (which happens ~7 minutes
+ * after boot if nobody scans), the panel just showed "Desconectado" forever.
+ * Rate-limited, and never after an explicit 403 from WhatsApp.
+ */
+export function kickstartIfIdle() {
+  if (connectionStatus !== "disconnected") return;
+  if (startPromise || reconnectTimer) return;
+  if (lastDisconnectCode === 403) return;
+  if (Date.now() - lastStartAt < PANEL_KICKSTART_MIN_INTERVAL_MS) return;
+  console.log("[Baileys] Admin panel is open and we are idle — starting connection");
+  startBaileys(true).catch((err) => console.error("[Baileys] Kickstart failed:", err));
 }
 
 /** Send a manual message from the /admin panel */
@@ -381,6 +693,7 @@ const CAMPAIGN_TIMEZONE = "Europe/Madrid";
 let campaignNextAllowedAt = 0;
 let campaignSentSinceBatch = 0;
 let campaignProcessorStarted = false;
+let campaignTickRunning = false;
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
@@ -394,9 +707,14 @@ function isWithinSendingHours(): boolean {
 }
 
 async function processCampaignQueue() {
+  // A slow send (large image, flaky link) can outlast the 15s interval; don't
+  // let two ticks pick the same pending recipient and double-send.
+  if (campaignTickRunning) return;
+  campaignTickRunning = true;
   try {
     if (Date.now() < campaignNextAllowedAt) return;
-    if (!sock || connectionStatus !== "open") return;
+    const s = sock;
+    if (!s || connectionStatus !== "open") return;
     if (!isWithinSendingHours()) return;
 
     const { getNextPendingRecipient, markRecipientSent, markRecipientFailed, getCampaignSentCountLast24h } =
@@ -415,9 +733,9 @@ async function processCampaignQueue() {
         // (not a URL) so it arrives as a photo, not a download link.
         const { readStoredFile } = await import("./storage");
         const imageBuffer = await readStoredFile(recipient.campaignImageUrl);
-        await sock.sendMessage(jid, { image: imageBuffer, caption: recipient.campaignMessage });
+        await s.sendMessage(jid, { image: imageBuffer, caption: recipient.campaignMessage });
       } else {
-        await sock.sendMessage(jid, { text: recipient.campaignMessage });
+        await s.sendMessage(jid, { text: recipient.campaignMessage });
       }
       await markRecipientSent(recipient.id, recipient.campaignId);
       console.log(`[Campaign] Sent to ${recipient.phone} (campaign ${recipient.campaignId})`);
@@ -436,6 +754,8 @@ async function processCampaignQueue() {
     }
   } catch (err) {
     console.error("[Campaign] Processor error:", err);
+  } finally {
+    campaignTickRunning = false;
   }
 }
 

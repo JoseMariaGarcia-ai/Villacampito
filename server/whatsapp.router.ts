@@ -26,6 +26,8 @@ import {
   getConnectionStatus,
   getCurrentQR,
   getCurrentQRImage,
+  getStatusDetails,
+  kickstartIfIdle,
   sendManualMessage,
   startBaileys,
   resetBaileysSession,
@@ -45,20 +47,31 @@ export const whatsappRouter = router({
 
   // ── Connection status ──────────────────────────────────────────────────────
 
-  status: adminProcedure.query(() => ({
-    status: getConnectionStatus(),
-    qr: getCurrentQR(),
-    qrImage: getCurrentQRImage(),
-  })),
+  status: adminProcedure.query(() => {
+    // The panel polling this is the signal that someone is looking: if the
+    // connection is idle (e.g. auto-reconnect gave up before anyone opened
+    // the panel), start it so a QR appears without an extra click.
+    kickstartIfIdle();
+    return {
+      status: getConnectionStatus(),
+      qr: getCurrentQR(),
+      qrImage: getCurrentQRImage(),
+      ...getStatusDetails(),
+    };
+  }),
 
   reconnect: adminProcedure.mutation(async () => {
-    await startBaileys(true);
+    // Don't await the socket here: startBaileys resolves only after the auth
+    // state is loaded and the socket is created, which can take several
+    // seconds (version fetch + DB). Kick it off and let the status poll
+    // report progress — otherwise a slow start made the button look frozen.
+    startBaileys(true).catch((err) => console.error("[Baileys] Manual reconnect failed:", err));
     return { ok: true };
   }),
 
   resetSession: adminProcedure.mutation(async () => {
     await resetBaileysSession();
-    await startBaileys(true);
+    startBaileys(true).catch((err) => console.error("[Baileys] Start after reset failed:", err));
     return { ok: true };
   }),
 
