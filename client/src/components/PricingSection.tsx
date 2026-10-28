@@ -147,7 +147,7 @@ function Calendar() {
 }
 
 /* ─── Pricing Data — All seasons 2026 ─── */
-const PRICING_DATA = [
+const PRICING_DATA_2026 = [
   {
     period: "Enero — Febrero — Marzo",
     rows: [
@@ -236,8 +236,103 @@ const PRICING_DATA = [
   },
 ];
 
+/* ─── Pricing Data — All seasons 2027 (mismas tarifas que 2026, fechas ajustadas) ─── */
+const PRICING_DATA_2027 = [
+  {
+    period: "Enero — Febrero — Marzo",
+    rows: [
+      { type: "Día entre semana", price: "250€", note: "Más de 1 día: consultar" },
+      { type: "Viernes", price: "350€", note: "" },
+      { type: "Sábado", price: "350€", note: "" },
+      { type: "Domingo", price: "250€", note: "" },
+      { type: "Fin de semana (2 días)", price: "550€", note: "" },
+      { type: "Fin de semana (3 días)", price: "650€", note: "" },
+      { type: "Semanas y quincenas", price: "Consultar", note: "" },
+    ],
+  },
+  {
+    period: "Abril",
+    rows: [
+      { type: "Día entre semana", price: "250€", note: "Más de 1 día: consultar" },
+      { type: "Viernes", price: "450€", note: "" },
+      { type: "Sábado", price: "450€", note: "" },
+      { type: "Domingo", price: "300€", note: "" },
+      { type: "Fin de semana (2 días)", price: "650€", note: "" },
+      { type: "Fin de semana (3 días)", price: "750€", note: "" },
+      { type: "Semanas y quincenas", price: "Consultar", note: "" },
+    ],
+  },
+  {
+    period: "1 Mayo — 13 Junio",
+    rows: [
+      { type: "Día entre semana", price: "350€", note: "Más de 1 día: consultar" },
+      { type: "Fin de semana (2 días)", price: "1.050€", note: "" },
+      { type: "Fin de semana (3 días)", price: "1.250€", note: "" },
+      { type: "Semana (lunes a lunes)", price: "2.050€", note: "" },
+      { type: "Quincenas", price: "Consultar", note: "" },
+    ],
+  },
+  {
+    period: "14 Junio — 30 Julio",
+    rows: [
+      { type: "Día entre semana", price: "450€", note: "Más de 1 día: consultar" },
+      { type: "Fin de semana (2 días)", price: "1.550€", note: "" },
+      { type: "Fin de semana (3 días)", price: "1.850€", note: "" },
+      { type: "Semana (lunes a lunes)", price: "3.050€", note: "" },
+      { type: "Quincenas", price: "Consultar", note: "" },
+    ],
+  },
+  {
+    period: "Agosto",
+    rows: [
+      { type: "Día entre semana", price: "450€", note: "Más de 1 día: consultar" },
+      { type: "Fin de semana (2 días)", price: "1.650€", note: "" },
+      { type: "Fin de semana (3 días)", price: "2.050€", note: "" },
+      { type: "Semana (lunes a lunes)", price: "3.500€", note: "" },
+      { type: "Quincenas", price: "Consultar", note: "" },
+    ],
+  },
+  {
+    period: "1 — 12 Septiembre",
+    rows: [
+      { type: "Día entre semana", price: "350€", note: "Más de 1 día: consultar" },
+      { type: "Fin de semana (2 días)", price: "1.250€", note: "" },
+      { type: "Fin de semana (3 días)", price: "1.550€", note: "" },
+      { type: "Semana (lunes a lunes)", price: "2.050€", note: "" },
+      { type: "Quincenas", price: "Consultar", note: "" },
+    ],
+  },
+  {
+    period: "13 — 30 Septiembre",
+    rows: [
+      { type: "Día entre semana", price: "250€", note: "Más de 1 día: consultar" },
+      { type: "Fin de semana (2 días)", price: "1.050€", note: "" },
+      { type: "Fin de semana (3 días)", price: "1.250€", note: "" },
+      { type: "Semana (lunes a lunes)", price: "1.550€", note: "" },
+      { type: "Quincenas", price: "Consultar", note: "" },
+    ],
+  },
+  {
+    period: "Octubre — Noviembre — Diciembre",
+    rows: [
+      { type: "Día entre semana", price: "250€", note: "Más de 1 día: consultar" },
+      { type: "Viernes", price: "350€", note: "" },
+      { type: "Sábado", price: "350€", note: "" },
+      { type: "Domingo", price: "250€", note: "" },
+      { type: "Fin de semana (2 días)", price: "550€", note: "" },
+      { type: "Fin de semana (3 días)", price: "650€", note: "" },
+      { type: "Semanas y quincenas", price: "Consultar", note: "" },
+    ],
+  },
+];
+
+const PRICING_BY_YEAR: Record<number, typeof PRICING_DATA_2026> = {
+  2026: PRICING_DATA_2026,
+  2027: PRICING_DATA_2027,
+};
+
 /* ─── Accordion Item ─── */
-function PricingAccordion({ block, index }: { block: typeof PRICING_DATA[0]; index: number }) {
+function PricingAccordion({ block, index }: { block: typeof PRICING_DATA_2026[0]; index: number }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -318,6 +413,9 @@ function PricingAccordion({ block, index }: { block: typeof PRICING_DATA[0]; ind
 
 /* ─── Main Component ─── */
 export default function PricingSection() {
+  const [year, setYear] = useState(2026);
+  const pricingData = PRICING_BY_YEAR[year];
+
   return (
     <section id="tarifas" className="section-padding bg-[oklch(0.97_0.005_80)]">
       <div className="container">
@@ -329,9 +427,20 @@ export default function PricingSection() {
               Tarifas y disponibilidad
             </span>
           </div>
-          <h2 className="font-heading text-3xl sm:text-4xl font-bold text-[oklch(0.28_0.07_245)] mb-4">
-            Precios 2026
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+            <h2 className="font-heading text-3xl sm:text-4xl font-bold text-[oklch(0.28_0.07_245)]">
+              Precios {year}
+            </h2>
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              className="bg-white border border-[oklch(0.9_0.005_250)] px-4 py-2.5 text-sm font-semibold text-[oklch(0.28_0.07_245)] cursor-pointer focus:outline-none focus:border-[oklch(0.72_0.15_60)]"
+              aria-label="Seleccionar año de tarifas"
+            >
+              <option value={2026}>Tarifas 2026</option>
+              <option value={2027}>Tarifas 2027</option>
+            </select>
+          </div>
           <p className="text-[oklch(0.5_0.01_250)] text-lg max-w-2xl leading-relaxed">
             Consulta nuestras tarifas por temporada y comprueba la disponibilidad en el calendario.
           </p>
@@ -340,8 +449,8 @@ export default function PricingSection() {
         <div className="grid lg:grid-cols-5 gap-10 lg:gap-14">
           {/* Pricing Accordion */}
           <div className="lg:col-span-3 space-y-3">
-            {PRICING_DATA.map((block, idx) => (
-              <PricingAccordion key={block.period} block={block} index={idx} />
+            {pricingData.map((block, idx) => (
+              <PricingAccordion key={`${year}-${block.period}`} block={block} index={idx} />
             ))}
 
             {/* Special note */}
