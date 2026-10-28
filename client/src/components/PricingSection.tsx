@@ -427,19 +427,28 @@ export default function PricingSection() {
               Tarifas y disponibilidad
             </span>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div className="flex flex-wrap items-center gap-4 mb-4">
             <h2 className="font-heading text-3xl sm:text-4xl font-bold text-[oklch(0.28_0.07_245)]">
-              Precios {year}
+              Precios
             </h2>
-            <select
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              className="bg-white border border-[oklch(0.9_0.005_250)] px-4 py-2.5 text-sm font-semibold text-[oklch(0.28_0.07_245)] cursor-pointer focus:outline-none focus:border-[oklch(0.72_0.15_60)]"
-              aria-label="Seleccionar año de tarifas"
-            >
-              <option value={2026}>Tarifas 2026</option>
-              <option value={2027}>Tarifas 2027</option>
-            </select>
+            <div className="flex gap-2" role="tablist" aria-label="Seleccionar año de tarifas">
+              {[2026, 2027].map((y) => (
+                <button
+                  key={y}
+                  type="button"
+                  role="tab"
+                  aria-selected={year === y}
+                  onClick={() => setYear(y)}
+                  className={`px-6 py-3 text-xl sm:text-2xl font-heading font-bold border-2 transition-colors ${
+                    year === y
+                      ? "bg-[oklch(0.28_0.07_245)] text-white border-[oklch(0.28_0.07_245)]"
+                      : "bg-white text-[oklch(0.28_0.07_245)] border-[oklch(0.9_0.005_250)] hover:border-[oklch(0.72_0.15_60)]"
+                  }`}
+                >
+                  {y}
+                </button>
+              ))}
+            </div>
           </div>
           <p className="text-[oklch(0.5_0.01_250)] text-lg max-w-2xl leading-relaxed">
             Consulta nuestras tarifas por temporada y comprueba la disponibilidad en el calendario.
