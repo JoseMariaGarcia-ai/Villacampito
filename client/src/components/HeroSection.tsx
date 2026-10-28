@@ -40,7 +40,6 @@ const INTERVAL_MS = 5000;
 
 export default function HeroSection() {
   const [current, setCurrent] = useState(0);
-  const [paused, setPaused] = useState(false);
 
   const next = useCallback(() => {
     setCurrent((prev) => (prev + 1) % HERO_IMAGES.length);
@@ -51,10 +50,9 @@ export default function HeroSection() {
   }, []);
 
   useEffect(() => {
-    if (paused) return;
     const timer = setInterval(next, INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [next, paused]);
+  }, [next]);
 
   const scrollToContent = () => {
     const el = document.querySelector("#caracteristicas");
@@ -65,8 +63,6 @@ export default function HeroSection() {
     <section
       id="inicio"
       className="relative h-screen min-h-[600px] max-h-[900px] overflow-hidden"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
     >
       {/* Background Images with crossfade */}
       <AnimatePresence mode="sync">
