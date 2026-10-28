@@ -113,7 +113,7 @@ function enqueueAuthWrite(id: string, fn: () => Promise<void>): Promise<void> {
 async function flushAuthWrites() {
   // Writes may enqueue more writes while we wait, so loop until drained.
   while (pendingAuthWrites.size > 0) {
-    await Promise.allSettled([...pendingAuthWrites.values()]);
+    await Promise.allSettled(Array.from(pendingAuthWrites.values()));
   }
 }
 

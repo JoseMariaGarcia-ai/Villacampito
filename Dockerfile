@@ -5,11 +5,14 @@ FROM node:22-slim AS app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 WORKDIR /app
 
-# Copiar solo package.json primero (sin lockfile — se regenera en build)
-COPY package.json ./
+# Copiar manifest + lockfile primero para cachear la capa de dependencias
+COPY package.json pnpm-lock.yaml ./
 
-# Instalar dependencias
-RUN pnpm install --no-frozen-lockfile
+# Instalar dependencias exactamente como en el lockfile — no resuelve el
+# arbol de versiones contra el registro en cada build (eso es lo que, ante
+# una incidencia de red de Railway/npm a mitad de resolucion, tumbaba el
+# build con pnpm install --no-frozen-lockfile).
+RUN pnpm install --frozen-lockfile
 
 # Copiar el resto del código
 COPY . .
