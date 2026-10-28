@@ -185,7 +185,7 @@ Sé conciso (evita respuestas muy largas en WhatsApp), cálido y resolutivo.`;
 const DEFAULT_KNOWLEDGE = `# Villa Campito — El Puerto de Santa María, Cádiz
 
 ## Resumen
-Villa de alquiler vacacional con piscina de 3 alturas, jacuzzi, chozo de bambú africano y jardín privado. Capacidad hasta 8 personas durmiendo (hasta 15 personas disfrutando de las instalaciones en eventos de día).
+Villa de alquiler vacacional situada en El Puerto de Santa María (Cádiz), en la zona de Cantarranas. Cuenta con piscina de 3 alturas, jacuzzi, chozo de bambú africano y jardín privado. Capacidad hasta 8 personas durmiendo (hasta 15 personas disfrutando de las instalaciones en eventos de día).
 
 ## Características exteriores
 - Piscina con 3 alturas
